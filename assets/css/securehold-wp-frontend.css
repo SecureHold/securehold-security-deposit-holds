@@ -1,0 +1,19 @@
+/* Checkout deposit notice */
+.securehold-checkout-deposit-info {
+    transition: all 0.2s ease;
+}
+.securehold-checkout-deposit-info:hover {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* My Account deposits */
+.securehold-my-account-deposits { margin: 2rem 0; }
+.securehold-page-description { color: #6b7280; margin-bottom: 1.5rem; }
+.securehold-my-account-deposits h2 { margin-bottom: 1rem; }
+.securehold-pagination .page-numbers { display: flex; gap: 0.25rem; list-style: none; padding: 0; margin: 1.5rem 0 0; }
+.securehold-pagination .page-numbers li a,
+.securehold-pagination .page-numbers li span { padding: 0.4rem 0.75rem; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; font-size: 0.875rem; }
+.securehold-pagination .page-numbers li span.current { background: #2563eb; color: #fff; border-color: #2563eb; }
+@media (max-width: 768px) {
+    .woocommerce-orders-table { font-size: 0.875rem; }
+}

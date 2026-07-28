@@ -1,0 +1,217 @@
+/**
+ * SecureHold Admin - Deactivation modal styles
+ * Enqueued only on plugins.php.
+ * Handle: securehold-admin-deactivation
+ *
+ * Layout hierarchy (flex columns, single scroll zone):
+ *
+ *   .securehold-deactivation-overlay   position:fixed, overflow-y:auto (safety net)
+ *   .securehold-deactivation-modal flex-col, max-height, overflow:hidden
+ *       .securehold-modal-header  flex:0 0 auto  (never scrolls)
+ *       #securehold-deactivation-form  flex-col, flex:1 1 auto, min-height:0
+ *           .securehold-modal-body   flex:1 1 auto, overflow-y:auto  (ONLY scroller)
+ *               .securehold-reason-list
+ *               #securehold-reason-details
+ *           .securehold-modal-footer  flex:0 0 auto  (always visible)
+ */
+
+/* ── Scroll freeze ──────────────────────────────────────────── */
+html.securehold-modal-open,
+body.securehold-modal-open {
+    overflow: hidden;
+    /* position:fixed + top + width applied to body via JS for position preservation. */
+}
+
+/* ── Overlay (dark backdrop) ────────────────────────────────── */
+.securehold-deactivation-overlay {
+    position: fixed;
+    z-index: 99999;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    /* Safety-net scroll: if dialog somehow overflows viewport, overlay catches it.
+       Primary scroll is handled by .securehold-modal-body (single scrollbar). */
+    overflow-y: auto;
+}
+
+/* ── Dialog (white box) ─────────────────────────────────────── */
+.securehold-deactivation-modal {
+    background: #fff;
+    width: 550px;
+    max-width: 90%;
+    margin: 50px auto;
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    position: relative;
+
+    /* Flex column: header pinned top, footer pinned bottom, body scrolls. */
+    display: flex;
+    flex-direction: column;
+
+    /* Constrain dialog so footer never leaves the viewport.
+       100vh fallback; 100dvh for mobile browsers that account for toolbars. */
+    max-height: calc(100vh - 100px);
+    max-height: calc(100dvh - 100px);
+
+    /* Clip scrolling content to rounded corners; hides overflow from flex children. */
+    overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.securehold-modal-header {
+    flex: 0 0 auto;
+    padding: 25px 30px;
+    border-bottom: 1px solid #e5e5e5;
+    background: #f9f9f9;
+}
+
+.securehold-modal-header h2 {
+    margin: 0 0 10px 0;
+    color: #1e1e1e;
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.securehold-modal-header p {
+    margin: 0;
+    color: #666;
+    font-size: 14px;
+}
+
+/* ── Form: flex column filling remaining height ──────────────── */
+#securehold-deactivation-form {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    /* min-height:0 is mandatory: without it a flex item refuses to shrink
+       below its content size, defeating the max-height on the dialog. */
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* ── Scrollable body (reason list + textarea) ───────────────── */
+.securehold-modal-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    min-height: 0; /* same flex shrink fix as #securehold-deactivation-form */
+}
+
+/* ── Reason list ─────────────────────────────────────────────── */
+.securehold-reason-list {
+    padding: 20px 30px;
+    /* max-height and overflow-y removed: .securehold-modal-body is the scroller now.
+       A nested overflow here would create a double scrollbar. */
+}
+
+.securehold-reason-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 15px;
+    margin-bottom: 8px;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.securehold-reason-item:hover {
+    border-color: #2271b1;
+    background: #f6f7f7;
+}
+
+.securehold-reason-item input[type="radio"] {
+    margin: 0 12px 0 0;
+    cursor: pointer;
+}
+
+.securehold-reason-item span {
+    font-size: 14px;
+    color: #2c3338;
+    cursor: pointer;
+}
+
+.securehold-reason-item:has(input:checked) {
+    border-color: #2271b1;
+    background: #f0f6fc;
+}
+
+/* ── Optional textarea (shown when reason requires details) ──── */
+#securehold-reason-details {
+    padding: 0 30px 20px;
+}
+
+#securehold-reason-textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+    box-sizing: border-box;
+    resize: vertical;
+}
+
+/* ── Footer (always visible, never scrolls) ─────────────────── */
+.securehold-modal-footer {
+    flex: 0 0 auto;
+    padding: 20px 30px;
+    border-top: 1px solid #e5e5e5;
+    background: #f9f9f9;
+
+    display: flex;
+    flex-wrap: wrap;        /* buttons wrap to 2nd line rather than overflow */
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+}
+
+.securehold-modal-footer .button {
+    flex: 0 0 auto;         /* natural width on desktop */
+    padding: 8px 20px;
+    height: auto;
+    font-size: 13px;
+    white-space: nowrap;    /* prevent button label from breaking mid-word */
+    text-align: center;
+}
+
+/* ── Responsive: small viewport height ──────────────────────── */
+/* Tighten margins so dialog fills viewport without clipping on 640 px screens. */
+@media (max-height: 700px) {
+    .securehold-deactivation-modal {
+        margin: 20px auto;
+        max-height: calc(100vh - 40px);
+        max-height: calc(100dvh - 40px);
+    }
+}
+
+/* ── Responsive: narrow viewport width ──────────────────────── */
+/* Stack buttons vertically; reduce lateral padding. */
+@media (max-width: 500px) {
+    .securehold-modal-header {
+        padding: 16px 20px;
+    }
+
+    .securehold-reason-list {
+        padding: 12px 16px;
+    }
+
+    #securehold-reason-details {
+        padding: 0 16px 16px;
+    }
+
+    .securehold-modal-footer {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 12px 16px;
+        gap: 8px;
+    }
+
+    .securehold-modal-footer .button {
+        flex: 1 1 auto;
+        width: 100%;
+        text-align: center;
+        justify-content: center;
+    }
+}

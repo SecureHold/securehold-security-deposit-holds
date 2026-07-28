@@ -1,0 +1,40 @@
+/**
+ * SecureHold Admin - Tools page styles
+ * Enqueued only on the Tools & Maintenance screen (securehold-tools).
+ * Handle: securehold-admin-tools-css
+ */
+
+@keyframes spin { 100% { transform: rotate(360deg); } }
+@keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+.sh-test-results { padding: 0.5rem 0; }
+.sh-test-step { padding: 1.25rem 1.5rem; margin-bottom: 1rem; border-left: 4px solid #cbd5e1; border-radius: 0.5rem; display: flex; align-items: start; gap: 1rem; background: #f8fafc; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: all 0.2s ease; animation: slideIn 0.3s ease; }
+.sh-test-step:hover { box-shadow: 0 4px 6px rgba(0,0,0,0.07); transform: translateX(2px); }
+.sh-test-step:last-child { margin-bottom: 0; }
+.sh-test-step .dashicons { flex-shrink: 0; font-size: 24px; width: 24px; height: 24px; }
+.sh-test-step > div { flex: 1; min-width: 0; }
+.sh-test-step strong { display: block; margin-bottom: 0.5rem; font-size: 1rem; font-weight: 600; color: #1e293b; }
+.sh-test-step span { display: block; color: #64748b; font-size: 0.9375rem; line-height: 1.6; }
+
+.sh-test-step-success { border-left-color: #10b981 !important; background: linear-gradient(to right, #f0fdf4, #f8fafc) !important; }
+.sh-test-step-success .dashicons { color: #10b981; }
+.sh-test-step-success strong { color: #065f46; }
+.sh-test-step-error { border-left-color: #ef4444 !important; background: linear-gradient(to right, #fef2f2, #f8fafc) !important; }
+.sh-test-step-error .dashicons { color: #ef4444; }
+.sh-test-step-error strong { color: #991b1b; }
+.sh-test-step-warning { border-left-color: #f59e0b !important; background: linear-gradient(to right, #fffbeb, #f8fafc) !important; }
+.sh-test-step-warning .dashicons { color: #f59e0b; }
+.sh-test-step-warning strong { color: #92400e; }
+
+.sh-test-results .notice { margin-top: 1.5rem; padding: 1.25rem 1.5rem; border-left: 4px solid; border-radius: 0.5rem; }
+.sh-test-results .notice p { margin: 0; font-size: 0.9375rem; line-height: 1.6; }
+.sh-test-results .notice-success { border-left-color: #10b981; background: linear-gradient(to right, #f0fdf4, #f8fafc); }
+.sh-test-results .notice-success p { color: #065f46; }
+.sh-test-results .notice-error { border-left-color: #ef4444; background: linear-gradient(to right, #fef2f2, #f8fafc); }
+.sh-test-results .notice-error p { color: #991b1b; }
+.sh-test-results .notice-warning { border-left-color: #f59e0b; background: linear-gradient(to right, #fffbeb, #f8fafc); }
+.sh-test-results .notice-warning p { color: #92400e; }
+
+.sh-modal-body::-webkit-scrollbar { width: 8px; }
+.sh-modal-body::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+.sh-modal-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }

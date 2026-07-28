@@ -1,0 +1,58 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# SecureHold WP — Distribution ignore file
+# Applied by:  wp dist-archive ./securehold-wp  (recommended)
+#              build-zip.ps1 (Windows — run from parent folder)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Documentation ─────────────────────────────────────────────────────────────
+# Exclude ALL markdown files. Exceptions are re-added explicitly by build-zip.ps1.
+# wp dist-archive supports negation natively (!README.md style).
+*.md
+!README.md
+!CHANGELOG.md
+
+# ── Dev / build tooling ───────────────────────────────────────────────────────
+.distignore
+scoper.inc.php
+composer.json
+composer.lock
+package.json
+package-lock.json
+phpcs.xml
+phpunit.xml
+Makefile
+
+# ── Version control ───────────────────────────────────────────────────────────
+.git
+.gitignore
+.github/
+
+# ── Dev directories ───────────────────────────────────────────────────────────
+tests/
+bin/
+node_modules/
+docs/
+
+# ── Editor / OS noise ─────────────────────────────────────────────────────────
+*.bak
+*.tmp
+*.old
+*.swp
+.DS_Store
+Thumbs.db
+
+# ── Secrets / environment ─────────────────────────────────────────────────────
+.env
+.env.*
+
+# ── Build artefacts ───────────────────────────────────────────────────────────
+*.log
+*.zip
+
+# ── ALWAYS INCLUDED — never listed above ──────────────────────────────────────
+# vendor/       Stripe PHP SDK — required at runtime
+# README.md     user-facing documentation (exception above)
+# CHANGELOG.md  version history for users (exception above)
+# readme.txt    WordPress.org plugin header (not affected by *.md — different extension)
+# LICENSE.txt   required for commercial distribution
+# uninstall.php WordPress uninstall handler

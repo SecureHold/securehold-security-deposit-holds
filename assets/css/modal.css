@@ -1,0 +1,108 @@
+/**
+ * Setup Modal CSS
+ * Extends the design system for modal-specific styles
+ * Version 3.0.2 - FIXED
+ */
+
+/* Import design system variables */
+@import 'securehold-design-system.css';
+
+/* CORRECTION : S'assurer que le modal overlay est correctement positionné */
+.sh-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100000;
+    /* Par défaut masqué */
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+/* CORRECTION : Quand actif, afficher et permettre les interactions */
+.sh-modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Modal specific overrides */
+.sh-modal {
+    max-width: 700px;
+    width: 90%;
+    background: white;
+    border-radius: var(--sh-radius-xl);
+    box-shadow: var(--sh-shadow-xl);
+    /* Animation d'entrée */
+    transform: scale(0.9);
+    transition: transform 0.3s ease;
+}
+
+/* CORRECTION : Animation du modal quand actif */
+.sh-modal-overlay.active .sh-modal {
+    transform: scale(1);
+}
+
+.sh-modal-body {
+    max-height: 50vh; /* RÉDUIT de 70vh à 50vh pour moins de hauteur */
+    overflow-y: auto;
+    padding: var(--sh-space-xl);
+}
+
+/* Smooth scroll */
+.sh-modal-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.sh-modal-body::-webkit-scrollbar-track {
+    background: var(--sh-gray-100);
+    border-radius: 4px;
+}
+
+.sh-modal-body::-webkit-scrollbar-thumb {
+    background: var(--sh-gray-300);
+    border-radius: 4px;
+}
+
+.sh-modal-body::-webkit-scrollbar-thumb:hover {
+    background: var(--sh-gray-400);
+}
+
+/* CORRECTION : Style du bouton de fermeture */
+.sh-modal-close {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: var(--sh-gray-500);
+    transition: all 0.2s ease;
+    border-radius: var(--sh-radius-sm);
+}
+
+.sh-modal-close:hover {
+    background: var(--sh-gray-100);
+    color: var(--sh-gray-700);
+}
+
+.sh-modal-close .dashicons {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+}
+
+/* CORRECTION : Responsive pour petits écrans */
+@media (max-width: 768px) {
+    .sh-modal {
+        max-width: 95%;
+        margin: 1rem;
+    }
+    
+    .sh-modal-body {
+        max-height: 55vh; /* Plus de hauteur sur mobile pour compenser */
+    }
+}

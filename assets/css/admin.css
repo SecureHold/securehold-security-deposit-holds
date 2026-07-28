@@ -1,0 +1,2291 @@
+/**
+ * SecureHold Admin Styles
+ * Version: 3.7.0
+ */
+
+/* ============================================
+   MAIN LAYOUT
+   ============================================ */
+.sh-notifications-wrapper {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 2rem;
+    margin-top: 2rem;
+    min-height: 70vh;
+}
+
+/* ============================================
+   SIDEBAR
+   ============================================ */
+.sh-emails-sidebar {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+}
+
+.sh-sidebar-header {
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #f9fafb 0%, #fff 100%);
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.sh-sidebar-header h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.25rem;
+    color: #111827;
+}
+
+.sh-sidebar-header p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #6b7280;
+}
+
+.sh-emails-list {
+    max-height: calc(100vh - 250px);
+    overflow-y: auto;
+}
+
+/* Email Category */
+.sh-email-category {
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.sh-email-category:last-child {
+    border-bottom: none;
+}
+
+.sh-category-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem 1.5rem;
+    background: #f9fafb;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #374151;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.sh-category-header .dashicons {
+    color: #2563eb;
+}
+
+/* Email Item */
+.sh-email-item {
+    display: block;
+    padding: 1rem 1.5rem;
+    text-decoration: none;
+    color: inherit;
+    transition: all 0.2s ease;
+    border-left: 3px solid transparent;
+}
+
+.sh-email-item:hover {
+    background: #f9fafb;
+    border-left-color: #2563eb;
+}
+
+.sh-email-item.active {
+    background: #eff6ff;
+    border-left-color: #2563eb;
+}
+
+.sh-email-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.sh-email-name {
+    font-weight: 600;
+    font-size: 0.9375rem;
+    color: #111827;
+}
+
+.sh-email-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.sh-email-status.enabled {
+    background: #d1fae5;
+    color: #059669;
+}
+
+.sh-email-status.disabled {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.sh-email-status .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+}
+
+.sh-email-description {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: #6b7280;
+    line-height: 1.4;
+}
+
+/* ============================================
+   EMAIL EDITOR
+   ============================================ */
+.sh-email-editor {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+}
+
+.sh-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2rem;
+    background: linear-gradient(135deg, #f9fafb 0%, #fff 100%);
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.sh-editor-header h2 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.5rem;
+    color: #111827;
+}
+
+.sh-editor-header p {
+    margin: 0;
+    font-size: 0.9375rem;
+    color: #6b7280;
+}
+
+/* Toggle Switch */
+.sh-toggle-switch {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.sh-toggle-switch input {
+    position: absolute;
+    opacity: 0;
+}
+
+.sh-toggle-slider {
+    position: relative;
+    width: 48px;
+    height: 24px;
+    background: #d1d5db;
+    border-radius: 24px;
+    transition: all 0.3s ease;
+}
+
+.sh-toggle-slider::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.sh-toggle-switch input:checked + .sh-toggle-slider {
+    background: #10b981;
+}
+
+.sh-toggle-switch input:checked + .sh-toggle-slider::after {
+    transform: translateX(24px);
+}
+
+.sh-toggle-label {
+    font-weight: 600;
+    font-size: 0.9375rem;
+    color: #374151;
+}
+
+/* ============================================
+   FORM
+   ============================================ */
+.sh-editor-form {
+    padding: 2rem;
+}
+
+.sh-form-group {
+    margin-bottom: 2rem;
+}
+
+.sh-form-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    color: #374151;
+    margin-bottom: 0.75rem;
+}
+
+.sh-form-label .dashicons {
+    color: #2563eb;
+}
+
+.sh-form-input,
+.sh-form-textarea {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 0.9375rem;
+    transition: all 0.2s ease;
+    font-family: inherit;
+}
+
+.sh-form-input:focus,
+.sh-form-textarea:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+}
+
+.sh-form-hint {
+    margin: 0.5rem 0 0 0;
+    font-size: 0.8125rem;
+    color: #6b7280;
+}
+
+/* Editor Toolbar */
+.sh-editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background: #f9fafb;
+    border: 2px solid #e5e7eb;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+}
+
+.sh-editor-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: white;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #374151;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.sh-editor-btn:hover {
+    background: #f3f4f6;
+    border-color: #2563eb;
+    color: #2563eb;
+}
+
+.sh-editor-btn .dashicons {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+}
+
+.sh-toolbar-separator {
+    width: 1px;
+    height: 24px;
+    background: #d1d5db;
+    margin: 0 0.5rem;
+}
+
+/* Editor Content */
+.sh-email-editor-content {
+    min-height: 400px;
+    padding: 1.5rem;
+    border: 2px solid #e5e7eb;
+    border-radius: 0 0 8px 8px;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    background: white;
+    overflow-y: auto;
+}
+
+.sh-email-editor-content:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+}
+
+.sh-email-editor-content p {
+    margin: 0 0 1rem 0;
+}
+
+.sh-email-editor-content ul,
+.sh-email-editor-content ol {
+    margin: 1rem 0;
+    padding-left: 2rem;
+}
+
+.sh-email-editor-content h3 {
+    color: #2563eb;
+    margin: 1.5rem 0 1rem 0;
+}
+
+/* Form Actions */
+.sh-form-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    padding-top: 1.5rem;
+    border-top: 2px solid #e5e7eb;
+}
+
+/* ============================================
+   VARIABLES SIDEBAR
+   ============================================ */
+.sh-sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999999;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.sh-sidebar-panel {
+    width: 400px;
+    background: white;
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    animation: slideInRight 0.3s ease;
+}
+
+@keyframes slideInRight {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+.sh-sidebar-panel .sh-sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.sh-sidebar-panel .sh-sidebar-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #111827;
+}
+
+.sh-sidebar-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: #6b7280;
+    transition: all 0.2s ease;
+    border-radius: 6px;
+}
+
+.sh-sidebar-close:hover {
+    background: #f3f4f6;
+    color: #111827;
+}
+
+.sh-sidebar-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+}
+
+.sh-sidebar-description {
+    padding: 1rem;
+    background: #eff6ff;
+    border-left: 3px solid #2563eb;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    color: #1e40af;
+    margin-bottom: 1.5rem;
+}
+
+/* Variable Category */
+.sh-variable-category {
+    margin-bottom: 2rem;
+}
+
+.sh-variable-category h4 {
+    margin: 0 0 1rem 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.sh-variables-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.sh-variable-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: left;
+}
+
+.sh-variable-item:hover {
+    background: #eff6ff;
+    border-color: #2563eb;
+}
+
+.sh-variable-item code {
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+    color: #2563eb;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.sh-variable-item span {
+    font-size: 0.8125rem;
+    color: #6b7280;
+    margin-left: 1rem;
+}
+
+/* ============================================
+   MODALS
+   ============================================ */
+.sh-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+.sh-modal-container {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+    max-width: 900px;
+    width: 100%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    animation: modalFadeIn 0.3s ease;
+}
+
+.sh-modal-container.sh-modal-small {
+    max-width: 500px;
+}
+
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.sh-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem 2rem;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.sh-modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #111827;
+}
+
+.sh-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2rem;
+}
+
+.sh-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    padding: 1.5rem 2rem;
+    border-top: 2px solid #e5e7eb;
+    background: #f9fafb;
+}
+
+/* ============================================
+   NOTIFICATIONS
+   ============================================ */
+.sh-notification {
+    position: fixed;
+    top: 32px;
+    right: -400px;
+    min-width: 300px;
+    max-width: 400px;
+    padding: 1rem 1.5rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    z-index: 9999999;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: right 0.3s ease;
+}
+
+.sh-notification.show {
+    right: 20px;
+}
+
+.sh-notification-success {
+    border-left: 4px solid #10b981;
+}
+
+.sh-notification-error {
+    border-left: 4px solid #ef4444;
+}
+
+.sh-notification .dashicons {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.sh-notification-success .dashicons {
+    color: #10b981;
+}
+
+.sh-notification-error .dashicons {
+    color: #ef4444;
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+@media (max-width: 1280px) {
+    .sh-notifications-wrapper {
+        grid-template-columns: 1fr;
+    }
+    
+    .sh-emails-sidebar {
+        max-height: 400px;
+    }
+}
+
+@media (max-width: 768px) {
+    .sh-sidebar-panel {
+        width: 100%;
+    }
+    
+    .sh-modal-container {
+        max-width: 100%;
+        margin: 1rem;
+    }
+}
+
+/* ==========================================================================
+   SETTINGS PAGE STYLES 
+   ========================================================================== */
+
+.sh-tabs-wrapper {
+    background: white;
+    border-bottom: 2px solid #e5e7eb; 
+}
+
+.sh-tabs-nav {
+    display: flex;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+}
+
+.sh-tab-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem 1.5rem;
+    color: #4b5563; 
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s ease;
+    position: relative;
+    background: transparent;
+    box-shadow: none; 
+}
+
+.sh-tab-link:focus {
+    box-shadow: none;
+    outline: none;
+}
+
+.sh-tab-link:hover {
+    color: #2563eb;
+    background: #f9fafb;
+}
+
+.sh-tab-link.active {
+    color: #2563eb; 
+    border-bottom-color: #2563eb;
+    background: white;
+}
+
+.sh-tab-link .dashicons {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+}
+
+.timing-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 1rem;
+    border: 2px solid #e5e7eb;
+    border-radius: 0.5rem; 
+    cursor: pointer;
+    transition: all 0.2s;
+    background: white;
+}
+
+.timing-card:hover {
+    border-color: #93c5fd;
+    transform: translateY(-2px);
+}
+
+.timing-card.selected {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #2563eb; 
+}
+
+.timing-card input {
+    display: none;
+}
+
+.timing-card .dashicons {
+    font-size: 28px;
+    width: 28px;
+    height: 28px;
+    margin-bottom: 0.5rem;
+    color: #9ca3af; 
+}
+
+.timing-card.selected .dashicons {
+    color: #2563eb;
+}
+
+.timing-card strong {
+    display: block;
+    font-size: 0.9rem;
+}
+
+/* PRO-locked timing card — rendered as a non-interactive div in FREE */
+.timing-card--locked {
+    opacity: 0.6;
+    cursor: default;
+    background: var(--sh-gray-50, #f9fafb);
+    position: relative;
+}
+.timing-card--locked:hover {
+    border-color: var(--sh-gray-200, #e5e7eb);
+    transform: none;
+}
+.timing-card--locked .sh-pro-badge {
+    display: block;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #2563eb;
+    background: #eff6ff;
+    border-radius: 9999px;
+    padding: 0.1rem 0.45rem;
+    margin-top: 0.3rem;
+}
+
+@keyframes slideInDown {
+    from { opacity: 0; transform: translateY(-30px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.sh-card-animated {
+    animation: scaleIn 0.3s ease;
+    transition: all 0.3s ease;
+}
+
+.sh-card-animated:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.sh-alert-success {
+    background: #ecfdf5;
+    border-left: 4px solid #10b981;
+    padding: 1.25rem;
+    border-radius: 0.375rem; 
+    display: flex;
+    gap: 1rem;
+}
+
+.sh-divider-gradient {
+    height: 2px;
+    background: linear-gradient(to right, transparent, #d1d5db, transparent); 
+    margin: 2rem 0;
+}
+
+.sh-toggle-group {
+    display: inline-flex;
+    background: #f3f4f6;
+    border-radius: 0.5rem;
+    padding: 0.25rem;
+}
+
+.sh-toggle-group input[type="radio"] {
+    display: none;
+}
+
+.sh-toggle-option {
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #4b5563; 
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sh-toggle-group input[type="radio"]:checked + .sh-toggle-option {
+    background: white;
+    color: #2563eb;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.sh-setting-row-enhanced {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    align-items: center;
+    padding: 1rem 0;
+}
+
+.sh-keys-section-enhanced {
+    margin: 2rem 0;
+}
+
+.sh-section-header {
+    cursor: pointer;
+    padding: 1.25rem;
+    background: #f9fafb; 
+    border-radius: 0.5rem;
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+}
+
+.sh-section-header:hover {
+    background: #f3f4f6;
+    border-color: #e5e7eb; 
+}
+
+.sh-section-content {
+    padding: 1.5rem;
+    background: white;
+    max-height: 1000px;
+    opacity: 1;
+    transition: all 0.3s ease;
+}
+
+.sh-keys-section-enhanced.collapsed .sh-section-content {
+    max-height: 0;
+    opacity: 0;
+    padding: 0 1.5rem;
+    overflow: hidden;
+}
+
+.sh-collapse-icon {
+    transition: transform 0.3s ease;
+}
+
+.sh-keys-section-enhanced.collapsed .sh-collapse-icon {
+    transform: rotate(-90deg);
+}
+
+.sh-input-field {
+    margin-bottom: 1.5rem;
+}
+
+.sh-label-modern {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 0.75rem;
+    font-size: 0.9375rem;
+}
+
+.sh-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.sh-input-modern {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    border: 2px solid #d1d5db;
+    border-radius: 0.375rem; 
+    font-size: 0.9375rem;
+    transition: all 0.2s ease;
+    background: white;
+}
+
+.sh-input-modern:focus {
+    outline: none;
+    border-color: #2563eb; 
+    box-shadow: 0 0 0 4px #eff6ff; 
+}
+
+.sh-toggle-password {
+    position: absolute;
+    right: 0.75rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: #9ca3af;
+    transition: all 0.2s ease;
+    border-radius: 0.25rem; 
+}
+
+.sh-toggle-password:hover {
+    color: #2563eb;
+    background: #f3f4f6;
+}
+
+.sh-select-wrapper {
+    position: relative;
+}
+
+.sh-select-modern {
+    width: 100%;
+    padding: 0.875rem 3rem 0.875rem 1rem;
+    border: 2px solid #d1d5db; 
+    border-radius: 0.375rem; 
+    font-size: 0.9375rem;
+    transition: all 0.2s ease;
+    background-color: white;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: none !important;
+    cursor: pointer;
+}
+
+.sh-select-modern:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px #eff6ff; 
+}
+
+.sh-select-icon {
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    pointer-events: none;
+}
+
+.sh-input-group-modern {
+    display: flex;
+    align-items: center;
+    border: 2px solid #d1d5db;
+    border-radius: 0.375rem;
+    overflow: hidden;
+    transition: all 0.2s ease;
+}
+
+.sh-input-group-modern:focus-within {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px #eff6ff; 
+}
+
+.sh-input-prefix,
+.sh-input-suffix {
+    padding: 0.875rem 1rem;
+    background: #f3f4f6;
+    font-weight: 600;
+    color: #374151; 
+    font-size: 0.9375rem;
+}
+
+.sh-input-group-modern .sh-input-modern {
+    border: none;
+    flex: 1;
+    padding: 0.875rem 1rem;
+}
+
+.sh-input-group-modern .sh-input-modern:focus {
+    box-shadow: none;
+}
+
+.sh-quick-link-modern {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    background: #f9fafb; 
+    border-radius: 0.375rem; 
+    color: #374151;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.sh-quick-link-modern:hover {
+    background: #2563eb;
+    color: white;
+    transform: translateX(4px);
+}
+
+.sh-quick-link-modern:focus {
+    box-shadow: none;
+    outline: none;
+}
+
+.sh-status-item-modern {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background: #f9fafb; 
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    color: #374151; 
+}
+
+@media (max-width: 1280px) {
+    .wrap.securehold-wrapper form > div {
+        grid-template-columns: 1fr;
+    }
+    .sh-setting-row-enhanced {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+}
+
+.sh-tooltip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    background: #2563eb; 
+    color: white;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: help;
+    margin-left: 0.5rem;
+    transition: all 0.2s ease;
+}
+
+.sh-tooltip:hover {
+    background: #1e40af;
+    transform: scale(1.1);
+}
+
+.sh-tooltip-content {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 10px);
+    transform: translateX(-50%);
+    background: #111827;
+    color: white;
+    padding: 1rem;
+    border-radius: 0.375rem; 
+    font-size: 0.875rem;
+    line-height: 1.5;
+    width: 300px;
+    z-index: 1000;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+    pointer-events: none;
+    text-align: left;
+}
+
+.sh-tooltip-content::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 8px solid transparent;
+    border-top-color: #111827; 
+}
+
+.sh-tooltip:hover .sh-tooltip-content {
+    visibility: visible;
+    opacity: 1;
+}
+
+.sh-tooltip-content strong {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #93c5fd; 
+    font-size: 0.9375rem;
+}
+
+.sh-tooltip-content ul {
+    margin: 0.5rem 0 0 1rem;
+    padding: 0;
+}
+
+.sh-tooltip-content li {
+    margin: 0.25rem 0;
+}
+
+/* ============================================
+   PRODUCT RULES TAB - Danger Ghost Button
+   ============================================ */
+.sh-btn-danger-ghost {
+    background: transparent;
+    color: #dc2626;
+    border: 1px solid #fee2e2;
+    padding: 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.sh-btn-danger-ghost:hover {
+    background: #fee2e2;
+    border-color: #dc2626;
+}
+
+.sh-edit-product-config {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.sh-edit-product-config .dashicons {
+    line-height: 1;
+    vertical-align: middle;
+}
+
+.sh-edit-product-config.sh-btn-active {
+    background: var(--sh-primary);
+    color: white;
+    border-color: var(--sh-primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.sh-edit-product-config.sh-btn-active:hover {
+    background: #1e40af;
+    border-color: #1e40af;
+}
+
+.sh-edit-product-config.sh-btn-active .dashicons {
+    color: white;
+}
+
+/* ============================================
+   VALIDATION ERROR STYLES
+   ============================================ */
+.sh-field-error {
+    border-color: #dc2626 !important;
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15) !important;
+    background-color: #fef2f2 !important;
+}
+
+.sh-field-error:focus {
+    border-color: #dc2626 !important;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25) !important;
+}
+
+.sh-validation-msg {
+    color: #dc2626;
+    font-size: 0.8rem;
+    margin: 6px 0 0;
+    font-weight: 500;
+}
+
+.sh-alert-danger {
+    border-left: 4px solid #dc2626;
+    background: #fef2f2;
+}
+
+/* ============================================
+   KEBAB MENU (3-dots dropdown)
+   ============================================ */
+.sh-kebab-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* --- Trigger button --- */
+.sh-kebab-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #9ca3af;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.sh-kebab-btn:hover {
+    background: #f9fafb;
+    color: #6b7280;
+    border-color: #e5e7eb;
+}
+
+.sh-kebab-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(37, 99, 235, 0.35);
+    border-color: #93c5fd;
+    color: #374151;
+}
+
+.sh-kebab-btn[aria-expanded="true"] {
+    background: #f0f5ff;
+    color: #2563eb;
+    border-color: #bfdbfe;
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+/* --- Dropdown panel (hidden by default) --- */
+.sh-kebab-menu {
+    display: none !important;
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 9999;
+    min-width: 220px;
+    max-width: 270px;
+    background: #fff;
+    border: 1px solid #e2e5e9;
+    border-radius: 10px;
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.04),
+        0 4px 6px -1px rgba(0, 0, 0, 0.06),
+        0 12px 24px -4px rgba(0, 0, 0, 0.1);
+    padding: 6px;
+    transform: translateY(-4px) scale(0.98);
+    transform-origin: top right;
+    transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s 0.14s;
+    pointer-events: none;
+}
+
+.sh-kebab-menu.is-open {
+    display: block !important;
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+    transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s 0s;
+}
+
+/* --- Menu item --- */
+.sh-kebab-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    margin: 1px 0;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.1s ease, color 0.1s ease;
+    text-align: left;
+    white-space: nowrap;
+    line-height: 1.4;
+    box-sizing: border-box;
+}
+
+.sh-kebab-item:hover,
+.sh-kebab-item:focus-visible {
+    background: #f5f6f8;
+    color: #111827;
+    outline: none;
+    text-decoration: none;
+}
+
+.sh-kebab-item:active {
+    background: #eef0f3;
+}
+
+/* --- Icon sizing --- */
+.sh-kebab-item .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    line-height: 16px;
+    opacity: 0.7;
+    transition: opacity 0.1s ease;
+}
+
+.sh-kebab-item:hover .dashicons {
+    opacity: 1;
+}
+
+/* --- Danger actions (Release, etc.) --- */
+.sh-kebab-danger {
+    color: #b91c1c;
+}
+
+.sh-kebab-danger .dashicons {
+    opacity: 0.8;
+}
+
+.sh-kebab-danger:hover,
+.sh-kebab-danger:focus-visible {
+    background: #fef2f2;
+    color: #991b1b;
+}
+
+.sh-kebab-danger:active {
+    background: #fee2e2;
+}
+
+/* --- Divider --- */
+.sh-kebab-divider {
+    height: 1px;
+    background: #f0f1f3;
+    margin: 5px 8px;
+}
+
+/* ============================================
+   DEPOSIT DETAILS — ACTION BAR (premium row)
+   Uses design-system .sh-btn classes for buttons.
+   ============================================ */
+.sh-detail-actions-bar {
+    padding: 0.75rem 1.5rem;
+    background: var(--sh-gray-50, #f9fafb);
+    display: flex;
+    gap: 0.375rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* ── Pill-style buttons inside the action bar ── */
+.sh-detail-actions-bar .sh-btn {
+    padding: 0.4375rem 0.875rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-radius: 999px;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    box-shadow: none;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sh-detail-actions-bar .sh-btn:hover {
+    transform: none;
+}
+
+/* Uniform icon sizing inside action bar */
+.sh-detail-actions-bar .sh-btn .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+    filter: none;
+}
+
+/* ── Primary pill ── */
+.sh-detail-actions-bar .sh-btn-primary {
+    background: var(--sh-primary, #2563eb);
+    color: #fff;
+    box-shadow: none;
+}
+.sh-detail-actions-bar .sh-btn-primary::before { display: none; }
+
+.sh-detail-actions-bar .sh-btn-primary:hover {
+    background: var(--sh-primary-hover, #1d4ed8);
+    color: #fff;
+    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.3);
+}
+
+/* ── Danger pill ── */
+.sh-detail-actions-bar .sh-btn-danger {
+    background: transparent;
+    color: var(--sh-danger, #ef4444);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.sh-detail-actions-bar .sh-btn-danger:hover {
+    background: var(--sh-danger-light, #fee2e2);
+    color: #b91c1c;
+    box-shadow: none;
+    transform: none;
+}
+
+/* ── Ghost / secondary pill ── */
+.sh-detail-actions-bar .sh-btn-ghost {
+    background: transparent;
+    color: var(--sh-gray-600, #4b5563);
+    border: 1px solid transparent;
+}
+
+.sh-detail-actions-bar .sh-btn-ghost:hover {
+    background: var(--sh-gray-100, #f3f4f6);
+    color: var(--sh-gray-800, #1f2937);
+    border-color: var(--sh-gray-200, #e5e7eb);
+}
+
+/* ── Separator ── */
+.sh-detail-actions-sep {
+    display: inline-block;
+    width: 1px;
+    height: 18px;
+    background: var(--sh-gray-200, #e5e7eb);
+    margin: 0 0.25rem;
+    flex-shrink: 0;
+}
+
+/* ── Strategy row: flex wrapper for text + badge ── */
+.sh-strategy-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+}
+
+.sh-strategy-label {
+    line-height: 1;
+}
+
+/* ── Applied-source pill badge ── */
+.sh-applied-source {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.sh-applied-source--rule {
+    background: var(--sh-warning-light, #fef3c7);
+    color: #92400e;
+}
+
+.sh-applied-source--global {
+    background: var(--sh-gray-100, #f3f4f6);
+    color: var(--sh-gray-600, #4b5563);
+}
+
+/* ============================================
+   DEPOSIT DETAILS PAGE
+   ============================================ */
+.sh-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.sh-detail-table th,
+.sh-detail-table td {
+    padding: 0.625rem 1rem;
+    font-size: 0.8125rem;
+    border-bottom: 1px solid #f3f4f6;
+    vertical-align: middle;
+}
+
+.sh-detail-table th {
+    text-align: left;
+    font-weight: 600;
+    color: #6b7280;
+    background: #f9fafb;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.sh-detail-table tr:last-child td {
+    border-bottom: none;
+}
+
+.sh-dt-label {
+    width: 160px;
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+}
+
+.sh-dt-value {
+    color: #111827;
+    font-size: 0.8125rem;
+    word-break: break-word;
+}
+
+.sh-dt-value code {
+    background: #f3f4f6;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-family: 'Courier New', monospace;
+}
+
+/* ============================================
+   ACTIVITY TIMELINE — pixel-perfect alignment
+   Rail-column approach: the connector line lives on the
+   ITEM (::before) so it stretches with content height.
+   The dot sits on top via z-index.
+   ============================================ */
+.sh-timeline {
+    padding: 1rem 1.25rem 0.5rem;
+}
+
+/* Each item: [rail 14px] [content 1fr] */
+.sh-timeline-item {
+    display: grid;
+    grid-template-columns: 14px 1fr;
+    column-gap: 0.875rem;
+    padding-bottom: 1.5rem;
+    position: relative;            /* anchor for the ::before rail line */
+}
+
+.sh-timeline-item:last-child {
+    padding-bottom: 0;
+}
+
+/*
+ * Connector line — on the ITEM, not the dot.
+ * Uses top/bottom: 0 so it auto-stretches to the full
+ * item height regardless of content length.
+ * Clipped to start at dot center and end at item bottom.
+ */
+.sh-timeline-item:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    /* Horizontal: center of the 14px rail column */
+    left: 7px;                     /* 14px / 2 */
+    transform: translateX(-50%);   /* offset half the line width */
+    /* Vertical: from dot center to bottom of item (into padding) */
+    top: calc(2px + 7px);         /* dot margin-top(2px) + dot radius(7px) */
+    bottom: 0;                     /* stretches to end of padding-bottom */
+    width: 2px;
+    background: var(--sh-gray-200, #e5e7eb);
+    border-radius: 1px;
+    z-index: 0;                    /* below the dot (z-index:1) */
+}
+
+/* Dot circle — always above the connector line */
+.sh-timeline-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid;
+    grid-row: 1 / -1;
+    align-self: start;
+    margin-top: 2px;               /* optical align with first text line */
+    position: relative;
+    z-index: 1;                    /* above the ::before line */
+    box-sizing: border-box;
+}
+
+/* Dot color variants */
+.sh-timeline-dot.success {
+    background: #d1fae5;
+    border-color: #10b981;
+}
+
+.sh-timeline-dot.danger {
+    background: #fee2e2;
+    border-color: #ef4444;
+}
+
+.sh-timeline-dot.warning {
+    background: #fef3c7;
+    border-color: #f59e0b;
+}
+
+.sh-timeline-dot.scheduled {
+    background: #e0e7ff;
+    border-color: #6366f1;
+}
+
+.sh-timeline-dot.info {
+    background: #dbeafe;
+    border-color: #3b82f6;
+}
+
+/* Content column */
+.sh-timeline-content {
+    min-width: 0;
+}
+
+.sh-timeline-time {
+    font-size: 0.6875rem;
+    color: var(--sh-gray-400, #9ca3af);
+    font-weight: 500;
+    line-height: 1;
+    margin-bottom: 0.25rem;
+    letter-spacing: 0.01em;
+}
+
+.sh-timeline-text {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sh-gray-800, #1f2937);
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+/* Inline amount badge */
+.sh-timeline-amount {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sh-gray-700, #374151);
+    background: var(--sh-gray-100, #f3f4f6);
+    padding: 0 6px;
+    border-radius: 4px;
+    margin-left: 0.375rem;
+    vertical-align: baseline;
+}
+
+/* Secondary detail line */
+.sh-timeline-detail {
+    font-size: 0.75rem;
+    color: var(--sh-gray-400, #9ca3af);
+    line-height: 1.4;
+    margin-top: 0.125rem;
+    word-break: break-all;
+}
+
+/* Log severity badges */
+.sh-log-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.sh-log-error {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fca5a5;
+}
+
+.sh-log-warning {
+    background: #fffbeb;
+    color: #d97706;
+    border: 1px solid #fde68a;
+}
+
+.sh-log-info {
+    background: #f0f9ff;
+    color: #0284c7;
+    border: 1px solid #bae6fd;
+}
+
+/* Logs table inside details page */
+.sh-logs-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.sh-logs-table tbody tr:hover {
+    background: #f9fafb;
+}
+
+/* ============================================
+   TECHNICAL LOGS — collapsible card
+   ============================================ */
+
+/* Collapsible card wrapper */
+.sh-card-collapsible {
+    overflow: hidden;
+}
+
+/* Header acts as toggle button */
+.sh-card-collapsible .sh-collapse-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.875rem 1.25rem;
+    margin: 0;
+    text-align: left;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s ease;
+}
+
+.sh-card-collapsible .sh-collapse-toggle:hover {
+    background: var(--sh-gray-50, #f9fafb);
+}
+
+.sh-card-collapsible .sh-collapse-toggle[aria-expanded="true"] {
+    border-bottom-color: var(--sh-gray-200, #e5e7eb);
+}
+
+/* Chevron icon rotation */
+.sh-collapse-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    color: var(--sh-gray-400, #9ca3af);
+    transition: transform 0.25s ease;
+    flex-shrink: 0;
+}
+
+.sh-collapse-toggle[aria-expanded="true"] .sh-collapse-icon {
+    transform: rotate(180deg);
+}
+
+/* Log count pill */
+.sh-logs-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 6px;
+    margin-left: 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--sh-gray-500, #6b7280);
+    background: var(--sh-gray-100, #f3f4f6);
+    border-radius: 999px;
+}
+
+/* Collapsible body — CSS-driven open/close */
+.sh-collapse-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.sh-collapse-body.is-open {
+    max-height: 600px;
+    overflow: visible;
+}
+
+/* Scroll wrapper for long log lists */
+.sh-techlog-scroll {
+    max-height: 340px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Technical log table */
+.sh-techlog-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.sh-techlog-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    text-align: left;
+    font-weight: 600;
+    color: var(--sh-gray-500, #6b7280);
+    background: var(--sh-gray-50, #f9fafb);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--sh-gray-200, #e5e7eb);
+}
+
+.sh-techlog-table tbody tr {
+    border-bottom: 1px solid var(--sh-gray-100, #f3f4f6);
+}
+
+.sh-techlog-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.sh-techlog-table tbody tr:hover {
+    background: var(--sh-gray-50, #f9fafb);
+}
+
+.sh-techlog-table td {
+    padding: 0.4375rem 0.75rem;
+    font-size: 0.75rem;
+    vertical-align: top;
+}
+
+/* Timestamp column */
+.sh-techlog-time {
+    white-space: nowrap;
+    color: var(--sh-gray-400, #9ca3af);
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.6875rem;
+    letter-spacing: -0.01em;
+}
+
+/* Message column */
+.sh-techlog-msg {
+    color: var(--sh-gray-700, #374151);
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+/* Stripe ID inline code */
+.sh-techlog-id {
+    display: inline-block;
+    margin-left: 0.25rem;
+    padding: 0 5px;
+    background: var(--sh-gray-100, #f3f4f6);
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    color: var(--sh-gray-500, #6b7280);
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    vertical-align: baseline;
+}
+
+/* Extra detail (error message) */
+.sh-techlog-extra {
+    display: block;
+    margin-top: 0.125rem;
+    color: var(--sh-danger, #ef4444);
+    font-size: 0.6875rem;
+    font-style: italic;
+}
+
+/* Additional badge variants for technical logs */
+.sh-log-webhook {
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+}
+
+.sh-log-stripe {
+    background: #f5f3ff;
+    color: #6d28d9;
+    border: 1px solid #ddd6fe;
+}
+
+/* Footer with link */
+.sh-techlog-footer {
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--sh-gray-100, #f3f4f6);
+    text-align: right;
+}
+
+.sh-techlog-footer a {
+    font-size: 0.75rem;
+    color: var(--sh-primary, #2563eb);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.sh-techlog-footer a:hover {
+    text-decoration: underline;
+}
+
+/* ── Dashboard teaser stat cards (FREE upgrade surface) ──────────── */
+
+.sh-stat-card-locked {
+    position: relative;
+    overflow: hidden;
+}
+
+.sh-stat-card-locked__overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 1rem;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.6);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+    border-radius: inherit;
+}
+
+.sh-stat-card-locked__icon {
+    font-size: 1.25rem !important;
+    width: 1.25rem !important;
+    height: 1.25rem !important;
+    color: var(--sh-primary, #2563eb);
+}
+
+.sh-stat-card-locked__label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--sh-gray-700, #374151);
+}
+
+.sh-stat-card-locked__desc {
+    font-size: 0.7rem;
+    color: var(--sh-gray-500, #6b7280);
+}
+
+.sh-stat-card-locked__ghost {
+    opacity: 0.15;
+    pointer-events: none;
+    padding: 1.5rem;
+}
+
+.sh-stat-card-locked__ghost-icon {
+    font-size: 2rem !important;
+    width: 2rem !important;
+    height: 2rem !important;
+    color: var(--sh-primary, #2563eb);
+}
+
+.sh-stat-card-locked__ghost-value {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-top: 0.5rem;
+}
+
+/* ── Dashboard upgrade CTA banner ──────────────────────────────────── */
+
+.sh-dashboard-upgrade-cta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    background: linear-gradient(135deg, #1e40af, #3b82f6);
+    color: #fff;
+    padding: 1rem 2rem;
+    border-radius: var(--sh-radius-lg, 12px);
+    box-shadow: var(--sh-shadow-md, 0 4px 6px -1px rgba(0,0,0,.1));
+    margin: 1.5rem 0 2rem;
+    box-sizing: border-box;
+}
+
+.sh-dashboard-upgrade-cta__star {
+    font-size: 1.25rem !important;
+    width: 1.25rem !important;
+    height: 1.25rem !important;
+    flex-shrink: 0;
+}
+
+.sh-dashboard-upgrade-cta__text {
+    flex: 1;
+}
+
+.sh-dashboard-upgrade-cta__text strong {
+    display: block;
+    font-size: 1rem;
+    color: #fff;
+}
+
+.sh-dashboard-upgrade-cta__text span {
+    font-size: 0.8rem;
+    opacity: 0.9;
+}
+
+.sh-dashboard-upgrade-cta__btn {
+    background: #fff;
+    color: #1e40af;
+    padding: 0.5rem 1rem;
+    border-radius: var(--sh-radius, 8px);
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.15s ease;
+}
+
+.sh-dashboard-upgrade-cta__btn:hover {
+    background: var(--sh-gray-100, #f3f4f6);
+    color: #1e40af;
+}
+
+/* Masked Stripe key / secret display */
+.securehold-masked-secret {
+    letter-spacing: 0.05em;
+}
+
+/* "Not configured" placeholder for empty Stripe credential fields */
+.securehold-not-configured {
+    color: #999;
+}
+
+/* Top spacing utility — used when a section grid follows a page header directly */
+.sh-section-top {
+    margin-top: 1.5rem;
+}
+
+/* Stat-card value with extra room above the change/subtitle row */
+.sh-stat-value--spaced {
+    margin-bottom: 12px;
+}
+
+/* ── Add-ons page ────────────────────────────────────────────────────────────── */
+
+/* Featured card: two-column layout (content | CTA) with accent left border */
+.sh-addons-featured.sh-card {
+    border-left: 4px solid var(--sh-primary, #2563eb);
+}
+.sh-addons-featured-body {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2rem;
+    align-items: flex-start;
+}
+.sh-addons-featured-desc {
+    flex: 1 1 360px;
+    min-width: 0;
+}
+.sh-addons-featured-cta {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: stretch;
+    min-width: 160px;
+}
+/* Feature checklist: 2-column grid on wider screens */
+.sh-addons-featured-list {
+    list-style: none;
+    margin: 1rem 0 0.75rem;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.4rem 1.5rem;
+}
+.sh-addons-featured-list li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--sh-gray-700, #374151);
+}
+.sh-addons-featured-list li .dashicons {
+    color: var(--sh-success, #10b981);
+    font-size: 15px;
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+}
+/* Note text under the feature list */
+.sh-addons-featured-note {
+    font-size: 0.8rem;
+    color: var(--sh-gray-500, #6b7280);
+    margin: 0.5rem 0 0;
+}
+/* Section heading between featured card and catalog grid */
+.sh-addons-section-heading {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--sh-gray-500, #6b7280);
+    margin: 1.75rem 0 0.75rem;
+    padding: 0;
+}
+
+/* SecureHold Pro logo in the featured card title */
+.sh-addons-pro-logo {
+    height: 36px;
+    width: auto;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 0.25rem;
+    flex-shrink: 0;
+}
+
+/* SecureHold Pro highlights — 2x2 mini-bloc grid inside the featured card */
+.sh-addons-highlights {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.875rem 1.5rem;
+    margin: 1rem 0 0.75rem;
+}
+@media (max-width: 700px) {
+    .sh-addons-highlights {
+        grid-template-columns: 1fr;
+    }
+}
+.sh-addons-highlight {
+    display: flex;
+    gap: 0.625rem;
+    align-items: flex-start;
+}
+.sh-addons-highlight-icon {
+    flex-shrink: 0;
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+    color: var(--sh-primary, #2563eb);
+    margin-top: 1px;
+}
+.sh-addons-highlight-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+.sh-addons-highlight-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sh-gray-800, #1f2937);
+    display: block;
+}
+.sh-addons-highlight-desc {
+    font-size: 0.8125rem;
+    color: var(--sh-gray-500, #6b7280);
+    line-height: 1.45;
+    display: block;
+}
+
+/* Add-ons catalog grid — 3 col desktop, 2 tablet, 1 mobile */
+.sh-addons-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+@media (max-width: 900px) {
+    .sh-addons-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+@media (max-width: 600px) {
+    .sh-addons-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Compact catalog card — independent component, no sh-card inheritance */
+.sh-addon-card {
+    background: #fff;
+    border: 1px solid var(--sh-gray-200, #e5e7eb);
+    border-radius: var(--sh-radius-md, 8px);
+    padding: 1rem 1.125rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    transition: box-shadow 0.15s ease;
+}
+.sh-addon-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+}
+/* Top row: icon + title + badge */
+.sh-addon-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+}
+.sh-addon-card-icon {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: var(--sh-gray-100, #f3f4f6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.sh-addon-card-icon .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    color: var(--sh-gray-600, #4b5563);
+}
+.sh-addon-card-meta {
+    flex: 1;
+    min-width: 0;
+}
+.sh-addon-card-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sh-gray-900, #111827);
+    margin: 0 0 0.25rem;
+    line-height: 1.3;
+}
+.sh-addon-card-badge {
+    font-size: 0.67rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    padding: 0.1rem 0.45rem;
+    border-radius: 20px;
+    display: inline-block;
+}
+.sh-addon-card-badge--coming-soon {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+.sh-addon-card-badge--planned {
+    background: var(--sh-gray-100, #f3f4f6);
+    color: var(--sh-gray-600, #4b5563);
+}
+.sh-addon-card-badge--available {
+    background: #f0fdf4;
+    color: #15803d;
+}
+/* Description text */
+.sh-addon-card-desc {
+    font-size: 0.8125rem;
+    color: var(--sh-gray-600, #4b5563);
+    line-height: 1.5;
+    margin: 0;
+    flex: 1;
+}
+/* Bottom action row (only for resource/available cards) */
+.sh-addon-card-footer {
+    padding-top: 0.375rem;
+    border-top: 1px solid var(--sh-gray-100, #f3f4f6);
+}
+.sh-addon-card-footer a {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sh-primary, #2563eb);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+.sh-addon-card-footer a:hover {
+    text-decoration: underline;
+}
+.sh-addon-card-footer a .dashicons {
+    font-size: 14px;
+    width: 14px;
+    height: 14px;
+}
+
+/* Footer note below the grid */
+.sh-addons-footer-note {
+    margin-top: 1.5rem;
+    font-size: 0.8125rem;
+    color: var(--sh-gray-400, #9ca3af);
+    text-align: center;
+}
+
+/* Diagnostics compact summary — Stripe Status & Compliance inline block */
+.sh-verdict--sm {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.82rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+.sh-verdict--sm .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+}
+.sh-check-list--grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.3rem;
+}
+.sh-check-row--sm {
+    padding: 0.35rem 0.6rem;
+    gap: 0.5rem;
+}
+.sh-check-row--sm .dashicons {
+    font-size: 14px;
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+}
+.sh-check-row--sm .sh-check-row-content strong {
+    font-size: 0.78rem;
+    margin-bottom: 0;
+}
+.sh-check-row--sm .sh-check-row-content span {
+    font-size: 0.75rem;
+    color: var(--sh-gray-500);
+}
+
+/* ── Dashboard: suppress WordPress notice text-shadow inside the wrapper ── */
+.securehold-wrapper .notice,
+.securehold-wrapper .updated,
+.securehold-wrapper .error { color: #1e1e1e !important; text-shadow: none !important; }
+.securehold-wrapper .notice a { color: #2271b1 !important; }

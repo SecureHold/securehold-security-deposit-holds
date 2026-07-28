@@ -1,0 +1,141 @@
+/**
+ * SecureHold Wizard Test Styles
+ */
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.securehold-test-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    padding: 2rem;
+    border-radius: 12px;
+    margin: 2rem 0;
+    box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+}
+
+.securehold-test-section h4 {
+    margin: 0 0 1rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: white;
+    font-size: 20px;
+}
+
+.securehold-test-section h4 .dashicons {
+    font-size: 24px;
+}
+
+.securehold-test-section > p {
+    margin: 0 0 1.5rem 0;
+    font-size: 15px;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.95);
+}
+
+.securehold-test-section ul {
+    margin: 0 0 1.5rem 0;
+    padding-left: 1.5rem;
+    font-size: 14px;
+    line-height: 1.8;
+    color: rgba(255,255,255,0.9);
+}
+
+#securehold-test-config {
+    background: white;
+    color: #667eea;
+    border: none;
+    padding: 12px 24px;
+    font-size: 16px;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    transition: all 0.3s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#securehold-test-config:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+}
+
+#securehold-test-results {
+    margin-top: 1.5rem;
+}
+
+#securehold-test-progress {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.securehold-test-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.securehold-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #E5E7EB;
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+.securehold-test-loading strong {
+    color: #1F2937;
+    font-size: 16px;
+}
+
+.securehold-test-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.securehold-test-step.success {
+    background: #D1FAE5;
+    border-left: 4px solid #10B981;
+    color: #065F46;
+}
+
+.securehold-test-step.error {
+    background: #FEE2E2;
+    border-left: 4px solid #EF4444;
+    color: #991B1B;
+}
+
+.securehold-test-step.warning {
+    background: #FEF3C7;
+    border-left: 4px solid #F59E0B;
+    color: #92400E;
+}
+
+.securehold-test-step .dashicons {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+#securehold-test-config.test-success {
+    background: #10B981;
+    color: white;
+}
+
+#securehold-test-config.test-error {
+    background: #EF4444;
+    color: white;
+}

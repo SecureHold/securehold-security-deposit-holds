@@ -1,0 +1,182 @@
+/**
+ * SecureHold Admin - Setup Wizard styles
+ * Enqueued on all SecureHold admin pages (wizard modal may appear on any of them).
+ * Handle: securehold-admin-wizard
+ * Dependency: securehold-admin
+ */
+
+/* ── Setup Wizard layout ─────────────────────────────────────── */
+.securehold-setup-wizard {
+    max-width: 900px;
+    margin: 40px auto;
+}
+
+.securehold-wizard-progress {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 40px 0;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+}
+
+.wizard-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    opacity: 0.4;
+    transition: all 0.3s;
+}
+
+.wizard-step.active {
+    opacity: 1;
+}
+
+.wizard-step.current .step-number {
+    background: #2196F3;
+    color: white;
+    box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.2);
+}
+
+.step-number {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 18px;
+    margin-bottom: 10px;
+}
+
+.wizard-step.active .step-number {
+    background: #4CAF50;
+    color: white;
+}
+
+.step-title {
+    font-size: 11px;
+    font-weight: 500;
+    text-align: center;
+    white-space: nowrap;
+    max-width: 80px;
+}
+
+.wizard-connector {
+    width: 80px;
+    height: 2px;
+    background: #e0e0e0;
+    margin: 0 20px 25px;
+}
+
+.wizard-connector.completed {
+    background: #4CAF50;
+}
+
+.securehold-wizard-content {
+    background: #fff;
+    padding: 40px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    margin-top: 20px;
+}
+
+.wizard-actions {
+    margin-top: 30px;
+    padding-top: 30px;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+}
+
+.wizard-video {
+    margin: 20px 0;
+    text-align: center;
+}
+
+.wizard-video iframe {
+    max-width: 100%;
+    border-radius: 8px;
+}
+
+.wizard-help-box {
+    background: #f0f7ff;
+    border-left: 4px solid #2196F3;
+    padding: 15px;
+    margin: 20px 0;
+}
+
+.wizard-success-box {
+    background: #f0fff4;
+    border-left: 4px solid #4CAF50;
+    padding: 20px;
+    margin: 20px 0;
+    text-align: center;
+}
+
+.wizard-success-box .dashicons {
+    font-size: 60px;
+    width: 60px;
+    height: 60px;
+    color: #4CAF50;
+}
+
+.wizard-warning-box {
+    background: #fffbf0;
+    border-left: 4px solid #ff9800;
+    padding: 15px;
+    margin: 20px 0;
+}
+
+/* === MOBILE: Scrollable step bar === */
+@media (max-width: 782px) {
+    .securehold-wizard-progress {
+        overflow-x: auto;
+        overflow-y: hidden;
+        justify-content: flex-start;
+        scroll-behavior: smooth;
+        -webkit-overflow-scrolling: touch;
+    }
+    /* Prevent steps and connectors from shrinking — they scroll instead */
+    .wizard-step,
+    .wizard-connector {
+        flex-shrink: 0;
+    }
+}
+
+/* ── Setup Wizard modal (compact variant) ────────────────────── */
+.sh-modal-compact {
+    max-width: 550px;
+}
+
+.sh-modal-compact .sh-modal-header {
+    padding: 1rem 1.5rem;
+}
+
+.sh-modal-compact .sh-modal-body {
+    padding: 1rem 1.5rem;
+    max-height: 60vh;
+}
+
+.sh-modal-compact .sh-modal-footer {
+    padding: 1rem 1.5rem;
+}
+
+.sh-modal-compact .sh-modal-title {
+    font-size: 1.25rem;
+}
+
+/* ── Step-dependencies: install spinner animation ────────────── */
+@keyframes rotation {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.sh-wiz-spin {
+    animation: rotation 2s infinite linear;
+    margin-top: 4px;
+}

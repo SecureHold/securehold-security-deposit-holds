@@ -1,0 +1,24 @@
+{
+    "name": "securehold/stripe-deposits",
+    "description": "Stripe Security Deposits for WooCommerce",
+    "type": "wordpress-plugin",
+    "require": {
+        "php": ">=7.4",
+        "stripe/stripe-php": "^20.2"
+    },
+    "require-dev": {
+        "humbug/php-scoper": "^0.18"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist"
+    },
+    "scripts": {
+        "post-install-cmd": [
+            "php bin/php-scoper-hotfix.php"
+        ],
+        "post-update-cmd": [
+            "@post-install-cmd"
+        ]
+    }
+}

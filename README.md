@@ -60,7 +60,7 @@ The Stripe PHP SDK is bundled with the plugin. No manual Composer installation i
 
 ---
 
-## Sprint 1 Documentation
+## Documentation
 
 The following guides cover installation, first setup, and the most critical concepts before going live.
 
@@ -87,6 +87,10 @@ The following guides cover installation, first setup, and the most critical conc
 - `LICENSE.txt` contains the license terms (GPLv2 or later).
 - `.distignore` defines files excluded from the distribution ZIP.
 - `composer.json`, `composer.lock`, and `scoper.inc.php` are development/build files, excluded from distribution via `.distignore`.
+
+### For Contributors
+
+`composer.lock` is intentionally committed to this repository. It pins exact dependency versions so the PHP dependencies (including the bundled Stripe SDK) build the same way every time. The `vendor/` directory itself is not committed — it is generated from `composer.lock` and bundled into the plugin only when building the distribution artifact.
 
 ---
 

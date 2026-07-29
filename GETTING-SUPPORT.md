@@ -117,7 +117,7 @@ A clear issue description speeds up resolution significantly. Use this structure
 
 ## Where to Submit a Support Request
 
-- **WordPress.org plugin support forum:** For free version issues — [wordpress.org/support/plugin/securehold-wp](https://wordpress.org/support/plugin/securehold-wp)
+- **WordPress.org plugin support forum:** For free version issues — [wordpress.org/support/plugin/securehold-security-deposit-holds](https://wordpress.org/support/plugin/securehold-security-deposit-holds/)
 - **SecureHold WP support portal:** For PRO license holders — [secureholdwp.com/support](https://secureholdwp.com/support)
 
 Please do not include Stripe API keys, secret keys, or webhook signing secrets in your support request. These are sensitive credentials and should never be shared.

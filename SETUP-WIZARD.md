@@ -36,7 +36,7 @@ You can also access the wizard at any time from **SecureHold WP → Setup Wizard
 
 ## Step 3 — WooCommerce Configuration
 
-**Purpose:** Verify that WooCommerce is set up correctly — currency, payment methods, and general configuration.
+**Purpose:** Verify that WooCommerce is set up correctly: currency, payment methods, and general configuration.
 
 **What to do:** Review any items flagged by the wizard. If WooCommerce Stripe is not yet configured with your Stripe account, complete that setup first, then return to this step.
 
@@ -67,7 +67,7 @@ Fix: Download a fresh copy of SecureHold WP from your account or from WordPress.
 **What to do:**
 
 1. Log in to your [Stripe Dashboard](https://dashboard.stripe.com).
-2. Confirm that **Test mode** is enabled (recommended for initial setup — toggle in the top-right corner).
+2. Confirm that **Test mode** is enabled (recommended for initial setup) using the toggle in the top-right corner.
 3. Go to **Developers → API Keys**.
 4. Copy the **Publishable key** (starts with `pk_test_`).
 5. Copy the **Secret key** (starts with `sk_test_`). Click **Reveal** if it is hidden.
@@ -136,7 +136,7 @@ Once the wizard is complete, the following settings are ready:
 
 - Stripe API keys (test mode)
 - Webhook endpoint and signing secret
-- Default deposit amount (set to a placeholder — update this in Settings → Deposit Rules)
+- Default deposit amount (set to a placeholder; update this in Settings → Deposit Rules)
 
 **What to configure next:**
 

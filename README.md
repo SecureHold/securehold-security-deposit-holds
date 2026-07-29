@@ -9,7 +9,7 @@ SecureHold WP lets WooCommerce merchants place Stripe pre-authorization holds (s
 ## What It Does
 
 1. Customer places a WooCommerce order and pays via Stripe.
-2. SecureHold WP creates a separate Stripe PaymentIntent for the security deposit, using the same payment method — no second checkout required.
+2. SecureHold WP creates a separate Stripe PaymentIntent for the security deposit, using the same payment method; no second checkout required.
 3. The authorized hold appears in your SecureHold Deposits list and in your Stripe Dashboard.
 4. You capture the hold (funds transfer to you) or release it (authorization removed) from within WooCommerce.
 
@@ -90,7 +90,7 @@ The following guides cover installation, first setup, and the most critical conc
 
 ### For Contributors
 
-`composer.lock` is intentionally committed to this repository. It pins exact dependency versions so the PHP dependencies (including the bundled Stripe SDK) build the same way every time. The `vendor/` directory itself is not committed — it is generated from `composer.lock` and bundled into the plugin only when building the distribution artifact.
+`composer.lock` is intentionally committed to this repository. It pins exact dependency versions so the PHP dependencies (including the bundled Stripe SDK) build the same way every time. The `vendor/` directory itself is not committed. It is generated from `composer.lock` and bundled into the plugin only when building the distribution artifact.
 
 ---
 

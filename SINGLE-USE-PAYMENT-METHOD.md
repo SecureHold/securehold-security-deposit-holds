@@ -6,7 +6,7 @@ This page explains a specific hold creation failure where the customer's payment
 
 ## What This Error Means
 
-When a customer pays for a WooCommerce order via Stripe, their card is used for the order payment. For SecureHold WP to place a **separate** deposit hold, it needs to reuse that same card — without requiring the customer to enter their card details again.
+When a customer pays for a WooCommerce order via Stripe, their card is used for the order payment. For SecureHold WP to place a **separate** deposit hold, it needs to reuse that same card, without requiring the customer to enter their card details again.
 
 This reuse is only possible if the card was saved as a **reusable payment method** during checkout.
 

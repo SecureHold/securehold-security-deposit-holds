@@ -52,7 +52,7 @@ The wizard checks that WooCommerce and the WooCommerce Stripe Gateway are both i
 
 ### Step 3: WooCommerce Configuration
 
-The wizard verifies that WooCommerce is configured correctly — currency, checkout settings, and payment gateway. Review any warnings and resolve them before proceeding.
+The wizard verifies that WooCommerce is configured correctly: currency, checkout settings, and payment gateway. Review any warnings and resolve them before proceeding.
 
 ### Step 4: Stripe SDK
 
@@ -142,7 +142,7 @@ Before placing a test order, set a deposit amount.
 **In your Stripe Dashboard (test mode):**
 
 1. Go to **Payments → PaymentIntents**.
-2. Find the entry for your test order's hold — it should show **Requires Capture**.
+2. Find the entry for your test order's hold. It should show **Requires Capture**.
 
 **In WooCommerce:**
 

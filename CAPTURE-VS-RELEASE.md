@@ -101,6 +101,6 @@ Before capturing or releasing, confirm the following:
 
 If approximately 7 days have passed since the hold was created and you have not captured or released it, Stripe will have automatically canceled the authorization. The deposit status in SecureHold WP will show **Released** (updated via webhook).
 
-At this point, the customer can no longer be charged through this hold. You would need to create a new hold manually — which requires the customer's payment method to still be available and reusable.
+At this point, the customer can no longer be charged through this hold. You would need to create a new hold manually, which requires the customer's payment method to still be available and reusable.
 
 To avoid this situation, always capture or release holds before the 7-day window closes. See [7-DAY-EXPIRATION.md](7-DAY-EXPIRATION.md) for full details.

@@ -79,7 +79,7 @@ Go to **SecureHold WP → Health Check** and take a screenshot or copy the statu
 2. Reproduce the issue (place a new test order or trigger the action again).
 3. Go to **WooCommerce → Status → Logs**.
 4. Select `securehold-stripe-deposits` as the log source.
-5. Copy the relevant log entries — especially any lines marked `[error]` or `[warning]`.
+5. Copy the relevant log entries, especially any lines marked `[error]` or `[warning]`.
 
 ### 8. Support Bundle (recommended)
 
@@ -108,10 +108,10 @@ A clear issue description speeds up resolution significantly. Use this structure
 > 1. Added product X to cart
 > 2. Checked out as guest using test card 4242 4242 4242 4242
 > 3. Order #1042 was created and paid
-> 4. Checked SecureHold WP → Deposits — no entry found
+> 4. Checked SecureHold WP → Deposits: no entry found
 
 **What I have already tried:**
-> Checked exclusions — product is not excluded. Minimum cart amount is not set. Reviewed logs — no error entries found. Health Check shows all green.
+> Checked exclusions: product is not excluded. Minimum cart amount is not set. Reviewed logs: no error entries found. Health Check shows all green.
 
 ---
 

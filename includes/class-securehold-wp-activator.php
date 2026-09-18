@@ -25,6 +25,11 @@ class Securehold_Activator {
     private static function schedule_cron() {
         require_once SECUREHOLD_PLUGIN_DIR . 'includes/cron/class-securehold-wp-scheduler.php';
         Securehold_Scheduler::schedule_auto_release_cron();
+
+        // Log maintenance is not tied to any feature toggle: the table grows
+        // whatever the store has switched on.
+        require_once SECUREHOLD_PLUGIN_DIR . 'includes/cron/class-securehold-wp-log-retention.php';
+        Securehold_Log_Retention::schedule();
     }
 
     private static function set_defaults() {
@@ -41,6 +46,16 @@ class Securehold_Activator {
             if (get_option($key) === false) {
                 add_option($key, $value);
             }
+        }
+
+        // Written once, on the first activation this install ever runs — never
+        // overwritten by a later deactivate/reactivate. This is the only
+        // reliable "when did this site start using SecureHold" timestamp; a
+        // site upgrading from an older version never passes through here, so
+        // opt-in telemetry sends no activated_at for those rather than
+        // guessing one from "now".
+        if ( get_option( 'securehold_activated_at' ) === false ) {
+            add_option( 'securehold_activated_at', current_time( 'mysql' ), '', false );
         }
     }
 }

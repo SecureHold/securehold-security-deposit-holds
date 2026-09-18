@@ -52,13 +52,6 @@ return [
             ->depth('== 0')
             ->name('class-securehold-wp-checkout.php'),
 
-        // Order hooks — direct \Stripe\* calls must be scoped to avoid class-not-found fatals
-        Finder::create()
-            ->files()
-            ->in(__DIR__ . '/includes/woocommerce')
-            ->depth('== 0')
-            ->name('class-securehold-wp-order.php'),
-
         // ── Stripe CA certificate bundle ────────────────────────────────────────
         // Non-PHP data file: PHP-Scoper copies it verbatim to the scoped output.
         // Without this, the build drops vendor/stripe/stripe-php/data/ entirely,
@@ -141,6 +134,15 @@ return [
         'Securehold_Scheduler',
         'Securehold_Config_Resolver',
         'SecureHold_DB',
+        // Reached from the Layer 2 deposit guard and from the Layer 3 failure
+        // log. Both live in scoped files, so without these entries PHP-Scoper
+        // rewrites the references and the checkout fatals on a class that is
+        // only ever declared in the global namespace.
+        'Securehold_Deposit_Computation_Service',
+        'Securehold_Support_Bundle',
+        'Securehold_Plugin_Installer',
+        // Reached from the scoped admin and webhook files.
+        'Securehold_Hold_State',
     ],
 
     // Global functions that must NOT be prefixed.
@@ -158,6 +160,23 @@ return [
         'securehold_get_stripe_keys',
         'securehold_get_woocommerce_stripe_keys',
         'securehold_get_stripe_mode_status',
+        'securehold_validate_stripe_key',
+        'securehold_stripe_key_prefixes',
+        'securehold_get_webhook_url',
+        // WordPress / WooCommerce globals reached from scoped files through a
+        // single function_exists() guard. PHP-Scoper only emits the safe
+        // two-sided form — global name first, prefixed name second — for
+        // functions it already knows about or that are listed here. For
+        // anything else it rewrites the one literal it finds, and the guard can
+        // never be true again.
+        //
+        // get_current_screen is the one that mattered: with the guard dead,
+        // $is_classic_order stayed false and admin.js was never enqueued on the
+        // classic order edit screen, leaving the metabox capture and release
+        // buttons rendered but inert on every non-HPOS site.
+        'get_current_screen',
+        'wc_get_orders',
+        'wp_doing_ajax',
     ],
 
     'patchers' => [

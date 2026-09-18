@@ -7,9 +7,11 @@ if (!defined('ABSPATH')) exit;
 
 $current_mode = get_option('securehold_stripe_mode', 'test');
 $test_pub = get_option('securehold_stripe_test_publishable_key', '');
-$test_secret = get_option('securehold_stripe_test_secret_key', '');
+// Booleans only: the secret keys must never reach this view's scope, let alone
+// the rendered HTML. An empty field keeps whatever is already stored.
+$has_test_secret = (bool) get_option('securehold_stripe_test_secret_key', '');
 $live_pub = get_option('securehold_stripe_live_publishable_key', '');
-$live_secret = get_option('securehold_stripe_live_secret_key', '');
+$has_live_secret = (bool) get_option('securehold_stripe_live_secret_key', '');
 ?>
 
 <div class="wizard-step-content">
@@ -62,7 +64,7 @@ $live_secret = get_option('securehold_stripe_live_secret_key', '');
                     </th>
                     <td>
                         <div class="sh-input-wrapper" style="position: relative; display: inline-block; width: 100%; max-width: 25em;">
-                            <input type="password" name="test_secret_key" value="<?php echo esc_attr($test_secret); ?>" class="regular-text code" placeholder="sk_test_..." style="width: 100%; padding-right: 40px;">
+                            <input type="password" name="test_secret_key" value="" autocomplete="off" class="regular-text code" placeholder="<?php echo esc_attr( $has_test_secret ? __( 'A key is saved — leave blank to keep it', 'securehold-security-deposit-holds' ) : 'sk_test_...' ); ?>" style="width: 100%; padding-right: 40px;">
                             
                             <button type="button" class="sh-toggle-password" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #666;">
                                 <span class="dashicons dashicons-visibility"></span>
@@ -93,7 +95,7 @@ $live_secret = get_option('securehold_stripe_live_secret_key', '');
                     </th>
                     <td>
                         <div class="sh-input-wrapper" style="position: relative; display: inline-block; width: 100%; max-width: 25em;">
-                            <input type="password" name="live_secret_key" value="<?php echo esc_attr($live_secret); ?>" class="regular-text code" placeholder="sk_live_..." style="width: 100%; padding-right: 40px;">
+                            <input type="password" name="live_secret_key" value="" autocomplete="off" class="regular-text code" placeholder="<?php echo esc_attr( $has_live_secret ? __( 'A key is saved — leave blank to keep it', 'securehold-security-deposit-holds' ) : 'sk_live_...' ); ?>" style="width: 100%; padding-right: 40px;">
                             
                             <button type="button" class="sh-toggle-password" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #666;">
                                 <span class="dashicons dashicons-visibility"></span>
@@ -109,18 +111,16 @@ $live_secret = get_option('securehold_stripe_live_secret_key', '');
                 <span class="dashicons dashicons-info" style="font-size: 20px;"></span>
                 <?php esc_html_e('What happens when you save:', 'securehold-security-deposit-holds'); ?>
             </h4>
-            
+
             <ul style="margin: 0; padding-left: 1.5rem; line-height: 1.8; font-size: 14px; color: #1E3A8A;">
-                <li>✅ <?php esc_html_e('API keys will be saved securely for SecureHold WP', 'securehold-security-deposit-holds'); ?></li>
-                <li>✅ <?php esc_html_e('WooCommerce Stripe Gateway will be configured automatically', 'securehold-security-deposit-holds'); ?></li>
-                <li>✅ <?php esc_html_e('Stripe payment method will be enabled in WooCommerce', 'securehold-security-deposit-holds'); ?></li>
-                <li>✅ <?php esc_html_e('Card saving will be enabled (required for security deposits)', 'securehold-security-deposit-holds'); ?></li>
-                <li>❌ <?php esc_html_e('Apple Pay / Google Pay will be disabled (not compatible with deposits)', 'securehold-security-deposit-holds'); ?></li>
+                <li>✅ <?php esc_html_e('Your keys are saved for SecureHold only', 'securehold-security-deposit-holds'); ?></li>
+                <li>✅ <?php esc_html_e('SecureHold checks the keys against Stripe', 'securehold-security-deposit-holds'); ?></li>
+                <li>✅ <?php esc_html_e('SecureHold checks that they match the Stripe account WooCommerce is using', 'securehold-security-deposit-holds'); ?></li>
             </ul>
-            
+
             <p style="margin: 1rem 0 0 0; font-size: 13px; color: #64748B;">
-                <strong><?php esc_html_e('Note:', 'securehold-security-deposit-holds'); ?></strong>
-                <?php esc_html_e('You won\'t need to configure Stripe manually in WooCommerce - everything is done automatically!', 'securehold-security-deposit-holds'); ?>
+                <strong><?php esc_html_e('Important:', 'securehold-security-deposit-holds'); ?></strong>
+                <?php esc_html_e('SecureHold does not configure the WooCommerce Stripe Gateway for you. Set that up separately in WooCommerce → Settings → Payments, and make sure both use the same Stripe account and the same mode — otherwise security deposits will fail.', 'securehold-security-deposit-holds'); ?>
             </p>
          </div>
 

@@ -16,13 +16,13 @@ From your side: the deposit appears in **SecureHold WP → Deposits** with statu
 
 ### 2. Captured (funds collected)
 
-You chose to charge the deposit. The reserved funds have been transferred from the customer's card to your Stripe balance. This is the same as a normal card payment: the money moves and the transaction is complete.
+You chose to charge the deposit. The reserved funds have been transferred from the customer's card to your Stripe balance. This is the same as a normal card payment — the money moves and the transaction is complete.
 
 This action is **not reversible** through SecureHold WP. If you need to return the funds after capturing, you must issue a refund separately via Stripe or WooCommerce.
 
 ### 3. Released (hold removed)
 
-You chose to cancel the deposit. The authorization is removed and the customer's funds are fully available again. Nothing was charged. The release is reflected on the customer's card statement: the pending authorization disappears.
+You chose to cancel the deposit. The authorization is removed and the customer's funds are fully available again. Nothing was charged. The release is reflected on the customer's card statement — the pending authorization disappears.
 
 ---
 
@@ -48,7 +48,7 @@ SecureHold WP creates a **separate** Stripe PaymentIntent for the security depos
 
 In practical terms:
 - The order payment (for the products) and the deposit hold are two separate transactions in Stripe.
-- The deposit uses the same payment method the customer provided at checkout, so no second card entry is required.
+- The deposit uses the same payment method the customer provided at checkout — no second card entry is required.
 - The deposit PaymentIntent will appear in your Stripe Dashboard alongside the order payment, but as a separate entry.
 
 ---
@@ -56,7 +56,7 @@ In practical terms:
 ## What the Customer Sees
 
 **At checkout:**
-An optional notice (configured in SecureHold WP settings) informs the customer that a security deposit will be placed on their card. This is informational only; no action is required.
+An optional notice (configured in SecureHold WP settings) informs the customer that a security deposit will be placed on their card. This is informational only — no action is required.
 
 **On their bank statement:**
 The deposit amount appears as a pending authorization, separate from the order total charge. Most banks display it as a pending transaction or a hold.

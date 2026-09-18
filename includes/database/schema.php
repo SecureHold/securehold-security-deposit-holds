@@ -49,14 +49,20 @@ class Securehold_DB_Schema {
             severity varchar(20) NOT NULL DEFAULT 'info',
             created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            KEY hold_id (hold_id),
-            KEY event_type (event_type)
+            KEY order_id_created (order_id, created_at, id),
+            KEY severity_id (severity, id),
+            KEY created_at_id (created_at, id)
         ) $charset_collate;";
         
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql_holds);
         dbDelta($sql_logs);
-        
-        update_option('securehold_db_version', '1.1.0');
+
+        // The schema version is the migrator's to own. Writing it here used to
+        // pin every site to '1.1.0' whatever shape its tables were actually in,
+        // and nothing ever read it back. A fresh install lands on the current
+        // schema above, so the migrator finds nothing to do and records that.
+        require_once __DIR__ . '/class-securehold-wp-migrator.php';
+        Securehold_DB_Migrator::maybe_migrate();
     }
 }

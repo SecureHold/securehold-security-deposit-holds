@@ -26,7 +26,13 @@ class SecureHold_Woo {
         // Securehold_Product_Settings::get_settings() (PRO UI + resolver).
         add_action('woocommerce_checkout_process', array($this, 'validate_checkout'));
         add_filter('woocommerce_email_classes', array($this, 'add_email_classes'));
-        
+
+        // MagePeople "Booking and Rental Manager" compatibility bridge (opt-in,
+        // securehold_magepeople_deposit_enabled). No-op when MagePeople is
+        // absent — this filter tag is only ever fired by MagePeople's own
+        // code, so registering it unconditionally is always safe.
+        add_filter('rbfw_security_deposit', array($this, 'maybe_suppress_magepeople_deposit'), 20, 3);
+
         // Note: L'affichage admin est maintenant géré par SecureHold_Admin
     }
 
@@ -67,19 +73,57 @@ class SecureHold_Woo {
     }
     
     public function validate_checkout() { }
-    
+
+    /**
+     * MagePeople "Booking and Rental Manager" compatibility bridge (opt-in).
+     *
+     * MagePeople's own rbfw_security_deposit() docblock documents this exact
+     * filter as the seam for "a PRO deposit manager [to] keep an included
+     * deposit visible as a liability without adding it to the payable rental
+     * total" — this is precisely SecureHold's use case, so no MagePeople core
+     * file is touched and no MagePeople function is ever disabled globally.
+     *
+     * The returned amount feeds directly into MagePeople's own cart-item
+     * total calculation (rbfw_add_cart_function_after → rbfw_tp →
+     * woocommerce_before_calculate_totals), so zeroing it here removes the
+     * deposit from the amount charged at checkout. SecureHold then holds the
+     * same amount separately via its own Stripe authorization — never both.
+     *
+     * Only suppresses the charge when Securehold_Config_Resolver would
+     * actually pick up this exact product as a valid MagePeople candidate
+     * (bridge enabled, deposit enabled on this Rent Item, fixed amount > 0)
+     * — same eligibility check, single source of truth, so there is never a
+     * "removed but SecureHold isn't holding anything" gap.
+     *
+     * @param  array $deposit   array('security_deposit_amount' => float, 'security_deposit_desc' => string).
+     * @param  int   $post_id   Rent Item id (already resolved by MagePeople for linked products).
+     * @param  float $sub_total Rental subtotal (unused here).
+     * @return array
+     */
+    public function maybe_suppress_magepeople_deposit( $deposit, $post_id, $sub_total ) {
+        if ( ! defined( 'SECUREHOLD_PLUGIN_DIR' ) ) {
+            return $deposit;
+        }
+        require_once SECUREHOLD_PLUGIN_DIR . 'includes/class-securehold-wp-config-resolver.php';
+
+        if ( null === Securehold_Config_Resolver::get_magepeople_settings( (int) $post_id ) ) {
+            return $deposit; // Bridge disabled, or not eligible — leave MagePeople untouched.
+        }
+
+        $deposit['security_deposit_amount'] = 0;
+        return $deposit;
+    }
+
     public function add_email_classes( $email_classes ) {
         if ( ! defined( 'SECUREHOLD_PLUGIN_DIR' ) ) {
             return $email_classes;
         }
 
-        // ── Debug: confirm filter callback fired (WP_DEBUG only) ─────────
-        if ( defined( 'WP_DEBUG' ) && WP_DEBUG && function_exists( 'securehold_log' ) ) {
-            securehold_log( 'add_email_classes: woocommerce_email_classes filter fired', array(
-                'wc_email_class_exists' => class_exists( 'WC_Email' ),
-                'keys_before'           => array_keys( $email_classes ),
-            ), 'debug' );
-        }
+        // Two wiring confirmations used to be logged per call — on entry and
+        // after injection — every time WooCommerce built its email list. They
+        // recorded normal behaviour, and the outcome is visible directly in
+        // WooCommerce > Settings > Emails. The failure branches below still log,
+        // as errors, because those are real anomalies.
 
         // Ensure the Securehold_Emails template/manager class is available.
         $manager_path = SECUREHOLD_PLUGIN_DIR . 'admin/class-securehold-wp-emails.php';
@@ -132,20 +176,6 @@ class SecureHold_Woo {
                     ), 'error' );
                 }
             }
-        }
-
-        // ── Debug: confirm our emails were injected (WP_DEBUG only) ──────
-        if ( defined( 'WP_DEBUG' ) && WP_DEBUG && function_exists( 'securehold_log' ) ) {
-            $injected_ids = array();
-            foreach ( $email_classes as $key => $obj ) {
-                if ( $obj instanceof WC_Email ) {
-                    $injected_ids[ $key ] = $obj->id;
-                }
-            }
-            securehold_log( 'add_email_classes: injection complete', array(
-                'keys_after'  => array_keys( $email_classes ),
-                'id_map'      => $injected_ids,
-            ), 'debug' );
         }
 
         return $email_classes;

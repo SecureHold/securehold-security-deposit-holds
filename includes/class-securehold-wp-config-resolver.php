@@ -52,9 +52,10 @@ class Securehold_Config_Resolver {
      * Type priority for cross-level tie-breaking (lower = higher priority).
      */
     private static $type_priority = array(
-        'product_rule'  => 1,
-        'category_rule' => 2,
-        'global'        => 3,
+        'product_rule'       => 1,
+        'magepeople_deposit' => 2,
+        'category_rule'      => 3,
+        'global'             => 4,
     );
 
     /**
@@ -162,12 +163,11 @@ class Securehold_Config_Resolver {
     public static function resolve_for_product( $product_id ) {
         self::load_dependencies();
 
-        // Product Rule and Category Rule are premium (PRO Rule Engine) candidates.
-        // When the Rule Engine is not active, skip straight to Global — even if
-        // legacy _securehold_enabled / _securehold_capture_timing / category rule
-        // data still exists in the database (e.g. PRO was deactivated).
+        // Product Rule is a premium (PRO Rule Engine) candidate. When the Rule
+        // Engine is not active, skip it — even if legacy _securehold_enabled /
+        // _securehold_capture_timing data still exists in the database (e.g.
+        // PRO was deactivated).
         if ( securehold_rule_engine_enabled() ) {
-            // Product Rule.
             $product_enabled = get_post_meta( $product_id, '_securehold_enabled', true );
             if ( $product_enabled === 'yes' ) {
                 $product_timing = get_post_meta( $product_id, '_securehold_capture_timing', true );
@@ -182,8 +182,25 @@ class Securehold_Config_Resolver {
                     return $result;
                 }
             }
+        }
 
-            // Category Rule (may have multi-category conflict for a single product).
+        // MagePeople "Booking and Rental Manager" (FREE, opt-in bridge) — gated
+        // only by its own securehold_magepeople_deposit_enabled option, never by
+        // the PRO Rule Engine. Only reached when no product_rule matched above.
+        $mp_settings = self::get_magepeople_settings( $product_id );
+        if ( null !== $mp_settings ) {
+            $product = wc_get_product( $product_id );
+            $label   = $product ? $product->get_formatted_name() : '#' . $product_id;
+            $result  = self::build_result( 'magepeople_deposit', $product_id, $label, $mp_settings, null );
+            $result['conflict_info'] = null;
+            $result['policy']        = 'priority_chain';
+            $result['explain']       = null;
+            return $result;
+        }
+
+        // Category Rule is a premium (PRO Rule Engine) candidate (may have
+        // multi-category conflict for a single product).
+        if ( securehold_rule_engine_enabled() ) {
             $all_rules = get_option( 'securehold_category_rules', array() );
             if ( is_array( $all_rules ) && ! empty( $all_rules ) ) {
                 $terms = wp_get_object_terms( $product_id, 'product_cat', array(
@@ -353,11 +370,10 @@ class Securehold_Config_Resolver {
     private static function collect_all_candidates( $items, $order ) {
         $candidates = array();
 
-        // Product Rule and Category Rule candidates are premium (PRO Rule Engine).
-        // Skip collecting them entirely when the Rule Engine is not active — even
-        // if legacy rule data still exists in the database (e.g. PRO deactivated).
+        // Product Rule candidates are premium (PRO Rule Engine). Skip collecting
+        // them entirely when the Rule Engine is not active — even if legacy rule
+        // data still exists in the database (e.g. PRO deactivated).
         if ( securehold_rule_engine_enabled() ) {
-            // ── Product Rule candidates ──
             foreach ( $items as $item ) {
                 $pid = $item->get_product_id();
                 if ( get_post_meta( $pid, '_securehold_enabled', true ) !== 'yes' ) {
@@ -386,7 +402,49 @@ class Securehold_Config_Resolver {
                     'type_prio'       => self::$type_priority['product_rule'],
                 );
             }
+        }
 
+        // ── MagePeople "Booking and Rental Manager" candidates (FREE, opt-in) ──
+        // Gated only by its own securehold_magepeople_deposit_enabled option,
+        // never by the PRO Rule Engine. Skipped only for products that
+        // actually got a product_rule candidate above (Rule Engine active AND
+        // _securehold_enabled = yes) — an explicit, LIVE SecureHold Product
+        // Rule always wins, so there is no need to even build the competing
+        // candidate. When the Rule Engine is off, _securehold_enabled is inert
+        // leftover data (e.g. PRO deactivated) and must NOT suppress the
+        // MagePeople candidate.
+        foreach ( $items as $item ) {
+            $pid = $item->get_product_id();
+            if ( securehold_rule_engine_enabled() && get_post_meta( $pid, '_securehold_enabled', true ) === 'yes' ) {
+                continue;
+            }
+
+            $mp_settings = self::get_magepeople_settings( $pid );
+            if ( null === $mp_settings ) {
+                continue;
+            }
+
+            $product = wc_get_product( $pid );
+            $label   = $product ? $product->get_formatted_name() : '#' . $pid;
+            $raw     = $mp_settings['deposit_amount'];
+            $timing  = 'immediate'; // No MagePeople timing signal; used for strategy_prio sort only — build_result() falls back to Global's real timing.
+
+            $candidates[] = array(
+                'type'            => 'magepeople_deposit',
+                'id'              => (int) $pid,
+                'label'           => $label,
+                'settings'        => $mp_settings,
+                'amount_resolved' => self::resolve_amount( $raw, $order ),
+                'amount_raw'      => $raw,
+                'timing'          => $timing,
+                'strategy_prio'   => isset( self::$strategy_priority[ $timing ] ) ? self::$strategy_priority[ $timing ] : 99,
+                'type_prio'       => self::$type_priority['magepeople_deposit'],
+            );
+        }
+
+        // Category Rule candidates are premium (PRO Rule Engine). Skip
+        // collecting them entirely when the Rule Engine is not active.
+        if ( securehold_rule_engine_enabled() ) {
             // ── Category Rule candidates (deduplicated by term_id) ──
             $all_rules = get_option( 'securehold_category_rules', array() );
             if ( is_array( $all_rules ) && ! empty( $all_rules ) ) {
@@ -524,6 +582,26 @@ class Securehold_Config_Resolver {
             $result = self::build_result( 'product_rule', $c['id'], $c['label'], $c['settings'], $order );
             $result['conflict_info']  = null;
             $result['_winner_reason'] = 'Product rule matched (priority chain — first product rule wins).';
+            $result['_tie_breaks']    = array();
+            return $result;
+        }
+
+        // Pass 1.5: MagePeople deposits (opt-in bridge). First match wins,
+        // same simple rule as product rules — an explicit SecureHold Product
+        // Rule always wins because it was already returned in Pass 1 above,
+        // and collect_all_candidates() never emits both for the same product.
+        $mp_candidates = array();
+        foreach ( $candidates as $c ) {
+            if ( 'magepeople_deposit' === $c['type'] ) {
+                $mp_candidates[] = $c;
+            }
+        }
+
+        if ( ! empty( $mp_candidates ) ) {
+            $c      = $mp_candidates[0];
+            $result = self::build_result( 'magepeople_deposit', $c['id'], $c['label'], $c['settings'], $order );
+            $result['conflict_info']  = null;
+            $result['_winner_reason'] = 'MagePeople security deposit matched (priority chain — first match wins).';
             $result['_tie_breaks']    = array();
             return $result;
         }
@@ -994,6 +1072,70 @@ class Securehold_Config_Resolver {
      * @param WC_Order|null $order      Order for percentage resolution.
      * @return float Resolved numeric amount.
      */
+    /**
+     * MagePeople "Booking and Rental Manager" compatibility bridge (opt-in).
+     *
+     * Reads the Rent Item's own security-deposit meta directly — never calls
+     * a MagePeople function — so this is a no-op with zero risk when the
+     * plugin is absent, inactive, or the Rent Item has never used the field.
+     *
+     * The WooCommerce product_id SecureHold receives is NOT always the Rent
+     * Item itself. MagePeople supports two setups:
+     *   - Standalone: the Rent Item post IS the sellable WC product (same ID).
+     *   - Linked: a separate WC product carries 'link_rbfw_id' postmeta
+     *     pointing at the real Rent Item that holds the deposit config
+     *     (mirrors MagePeople's own resolution in
+     *     RBFW_Woocommerse::rbfw_add_info_to_cart_item()).
+     * Both are resolved here so a linked setup is never silently missed.
+     *
+     * V1 scope: fixed amounts only. Percentage-type MagePeople deposits are
+     * intentionally skipped — this resolver has no reliable per-item subtotal
+     * at this point (only the full order/no order), so a percentage here
+     * would silently use the wrong base. Skipping is safe: it simply falls
+     * through to Category Rule / Global, exactly like "no MagePeople deposit
+     * configured" would.
+     *
+     * @param  int $product_id WooCommerce product_id as seen by the resolver.
+     * @return array|null  array('deposit_amount' => string) or null (no candidate).
+     */
+    public static function get_magepeople_settings( $product_id ) {
+        if ( get_option( 'securehold_magepeople_deposit_enabled', 'no' ) !== 'yes' ) {
+            return null;
+        }
+
+        $rent_item_id = $product_id;
+        $linked_id    = get_post_meta( $product_id, 'link_rbfw_id', true );
+        if ( ! empty( $linked_id ) ) {
+            $rent_item_id = (int) $linked_id;
+        }
+
+        if ( get_post_meta( $rent_item_id, 'rbfw_enable_security_deposit', true ) !== 'yes' ) {
+            return null;
+        }
+
+        $type = get_post_meta( $rent_item_id, 'rbfw_security_deposit_type', true );
+        if ( 'percentage' === $type ) {
+            return null; // Unsupported in this first integration — see docblock.
+        }
+
+        $amount = get_post_meta( $rent_item_id, 'rbfw_security_deposit_amount', true );
+        if ( ! is_numeric( $amount ) ) {
+            return null;
+        }
+
+        $amount = (float) $amount;
+        if ( $amount <= 0 ) {
+            return null;
+        }
+
+        return array(
+            'deposit_amount' => (string) $amount,
+            // No capture_timing from MagePeople — build_result() falls back
+            // to Global's timing and tracks it in 'fallbacks'.
+            'capture_timing' => null,
+        );
+    }
+
     private static function resolve_amount( $raw_amount, $order ) {
         if ( empty( $raw_amount ) ) {
             return 0;

@@ -2,9 +2,9 @@
 Contributors: secureholdwp
 Tags: stripe, woocommerce, security deposit, pre-authorization, rental
 Requires at least: 6.0
-Tested up to: 7.0
+Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 3.4.3
+Stable tag: 3.4.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -221,11 +221,65 @@ This plugin connects to the Stripe API to create and manage payment authorizatio
 * Stripe Terms of Service: https://stripe.com/tos
 * Stripe Privacy Policy: https://stripe.com/privacy
 
+**SecureHold Usage Telemetry (opt-in)**
+
+This plugin can optionally send minimal pseudonymous usage data to secureholdwp.com (SecureHold's own servers). This is off by default and strictly opt-in — nothing is sent unless you enable "Share usage data" in Connection settings, and you can turn it off at any time, which stops all future check-ins immediately.
+
+* Service: SecureHold usage telemetry
+* Endpoint: https://secureholdwp.com
+* Data transmitted, once a day while enabled: a randomly generated site identifier that is not derived from your domain or any personal data; the SecureHold, WordPress, and WooCommerce version numbers; the dates SecureHold was first activated and usage sharing was enabled, when available; whether a compatible Stripe configuration appears to be present (yes/no only); and whether a deposit hold has ever been created on your site (yes/no only).
+* Data never transmitted: your domain or site URL, your email address, any WooCommerce order or customer data, any Stripe account/key/payment data, any SecureHold PRO license data, or any cookie/session data.
+* Privacy Policy: https://secureholdwp.com/privacy-policy/
+* Terms of Use: https://secureholdwp.com/terms/
+
 **Deactivation feedback (optional)**
 
 When the plugin is deactivated, an optional feedback form appears in the WordPress admin. If the form is submitted, the following data is sent by email to support@secureholdwp.com: site URL, plugin version, deactivation reason, and any additional details provided. Submission is entirely optional. Clicking "Skip and Deactivate" deactivates the plugin without sending any data.
 
 == Changelog ==
+
+= 3.4.10 =
+
+* Fix: MagePeople bridge now works correctly in FREE when PRO Rule Engine is not enabled.
+* Fix: Settings now return to the same tab after saving.
+
+= 3.4.9 =
+
+* Added: contextual, clearly-labeled previews of SecureHold PRO features in the FREE admin interface (Deposit Rules, Notifications, Tools, the deposit simulator, and Logs) — informational only, so FREE users can see what PRO adds without any PRO logic, settings, or interactive controls in FREE itself.
+* Added: optional integration with Booking and Rental Manager - MagePeople to reuse a Rent Item's fixed security deposit amount for SecureHold's own hold, and to prevent MagePeople from also adding that deposit to the WooCommerce payable total when enabled. Opt-in and disabled by default (Settings > Deposit Rules > Third-Party Compatibility). Fixed amounts only in this version — percentage-type MagePeople deposits are not supported and are safely ignored, falling back to your existing Category or Global deposit rules.
+
+= 3.4.8 =
+
+* Added: optional, privacy-conscious usage telemetry to help us understand real-world SecureHold usage and improve the plugin. Off by default — enable it from Connection settings ("Share usage data") if you'd like to help; you can turn it off again at any time. See External Services above for exactly what is and isn't sent.
+* Improvement: Support Bundle redaction now also covers WordPress and WooCommerce session cookies, as a second line of defense on top of the existing API key and token protections.
+
+= 3.4.7 =
+
+* Improvement: the Export Support Bundle tool (Tools > System) now includes a License section when SecureHold PRO is installed — status, plan, last check time, and details of the last activation or check attempt (HTTP status, connection errors) — so a licensing issue can be diagnosed from the bundle alone.
+
+= 3.4.6 =
+
+* Fix: Improved the alignment of the manual hold action button in the WooCommerce order metabox.
+
+= 3.4.5 =
+
+* Fix: the date a deposit was authorized is now recorded. It was left empty on deposits created directly, so the Deposit Details timeline skipped its authorization entry and exports showed no date.
+* Fix: a deposit authorized by a Stripe webhook is given its expiry date again. Without it, automatic release had no deadline to work from.
+* Fix: the Capture and Release buttons in the order screen metabox work again on sites still using the classic WooCommerce order storage. The buttons were shown but nothing happened when clicked; sites on High-Performance Order Storage were not affected.
+* Fix: several checks used by the diagnostics and by Health Check reported nothing at all, and now report again.
+
+= 3.4.4 =
+
+* Fix: security deposits are now created reliably on the Cart & Checkout Blocks checkout. A deposit could previously be skipped when the order reached its trigger status before Stripe had finished setting up the payment.
+* Improvement: better compatibility with recent WooCommerce Stripe versions, including the Optimized Checkout and Adaptive Pricing checkout flows.
+* Fix: a deposit's status is now kept in one place and mirrored to the order. A captured or released deposit can no longer still read as authorized on the order screen.
+* Fix: capture and release are protected against simultaneous requests. Two clicks at the same moment can no longer both reach Stripe; only one operation runs, the other is refused straight away.
+* Fix: Stripe webhooks are now idempotent. A webhook arriving after a capture or a release no longer rewrites the deposit, duplicates the order note or sends the customer a second email.
+* Fix: the capture date recorded on a deposit is now the moment of the capture, not the moment the hold was authorized.
+* Improvement: clearer diagnostics. Health Check and the support bundle report deposits whose creation failed, and an admin notice points to them.
+* Fix: HPOS compatibility corrections on the order screen, plus a proper database migration path and bounded log maintenance so the log table no longer grows without limit.
+* Fix: failed captures and releases are now logged as errors instead of routine messages, and a refused webhook signature is logged as a warning.
+* Various compatibility and robustness fixes.
 
 = 3.4.3 =
 

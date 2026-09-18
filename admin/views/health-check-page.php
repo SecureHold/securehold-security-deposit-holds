@@ -107,6 +107,7 @@ if (is_array($cron_test_notice)) {
                             $titles = array(
                                 'stripe_sdk'          => __('Stripe SDK', 'securehold-security-deposit-holds'),
                                 'stripe_keys'         => __('Stripe API Keys', 'securehold-security-deposit-holds'),
+                                'stripe_context'      => __('Stripe Context', 'securehold-security-deposit-holds'),
                                 'webhook'             => __('Webhook Configuration', 'securehold-security-deposit-holds'),
                                 'woocommerce'         => __('WooCommerce', 'securehold-security-deposit-holds'),
                                 'stripe_gateway'      => __('Stripe Payment Gateway', 'securehold-security-deposit-holds'),

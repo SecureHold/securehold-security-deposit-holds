@@ -99,6 +99,12 @@ class Securehold_Checkout {
      */
     private $layer2_http_injected = false;
 
+    /** Sentinel: the deposit question has not been asked yet in this request. */
+    const SFU_GATE_UNSET = 'unset';
+
+    /** @var bool|null|string Request-local answer to the deposit question. */
+    private $sfu_gate_answer = self::SFU_GATE_UNSET;
+
     public function __construct() {
 
         // ── Boot log ──
@@ -344,8 +350,18 @@ class Securehold_Checkout {
      * @return array Modified args
      */
     public function layer2_http_intercept($parsed_args, $url) {
-        // ── Quick exit: only target Stripe PI endpoints ──
-        if (empty($url) || strpos($url, 'api.stripe.com/v1/payment_intents') === false) {
+        // ── Quick exit: only target the two Stripe endpoints that mint a PI ──
+        //
+        // WooCommerce Stripe 10.9.0 creates the checkout PaymentIntent one of two
+        // ways. Classic and Blocks POST /v1/payment_intents, which this layer has
+        // always covered. Optimized Checkout POSTs /v1/checkout/sessions and lets
+        // Stripe mint the PaymentIntent inside the session — no /v1/payment_intents
+        // request is ever made, so the historic guard let that flow through
+        // untouched. Optimized Checkout is switched on by default since the
+        // gateway's 10.8 upgrade routine, so that is not a rare path.
+        $endpoint = $this->classify_stripe_endpoint($url);
+
+        if ($endpoint === null) {
             return $parsed_args;
         }
 
@@ -393,6 +409,23 @@ class Securehold_Checkout {
             if (!empty($body_array['off_session'])) {
                 return $parsed_args;
             }
+        }
+
+        // ── Only touch checkouts that actually need a SecureHold deposit ──
+        //
+        // This layer used to rewrite every Stripe checkout request the site made,
+        // whether or not the cart carried a deposit. Asking Stripe to keep a
+        // payment method reusable is not free of consequence for the shopper, so
+        // it has no business happening on a plain purchase.
+        $needs_deposit = $this->should_inject_sfu_for_current_checkout();
+
+        if ($needs_deposit === false) {
+            return $parsed_args;
+        }
+
+        // ── Checkout Sessions take a different shape ──
+        if ($endpoint === 'checkout_session') {
+            return $this->layer2_inject_into_checkout_session($parsed_args, $url, $body, $body_array, $body_is_string);
         }
 
         // ── Check if SFU is already set ──
@@ -453,6 +486,196 @@ class Securehold_Checkout {
     }
 
     /**
+     * Which PaymentIntent-minting Stripe endpoint a URL targets, if any.
+     *
+     * Only the creation endpoints qualify. /v1/checkout/sessions/{id} updates an
+     * existing session, where setup_future_usage is no longer ours to set, so the
+     * match is anchored to the collection path.
+     *
+     * @since 3.4.4
+     *
+     * @param string $url Outgoing request URL.
+     * @return string|null 'payment_intent', 'checkout_session', or null.
+     */
+    private function classify_stripe_endpoint($url) {
+        if (empty($url) || !is_string($url)) {
+            return null;
+        }
+
+        if (strpos($url, 'api.stripe.com/v1/payment_intents') !== false) {
+            return 'payment_intent';
+        }
+
+        // Creation only: nothing may follow the path but a query string.
+        if (preg_match('#api\.stripe\.com/v1/checkout/sessions(\?|$)#', $url)) {
+            return 'checkout_session';
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether the checkout being paid for right now carries a SecureHold deposit.
+     *
+     * Layer 2 rewrites outbound Stripe requests, and it used to do so for every
+     * checkout on the site. Injecting setup_future_usage tells Stripe to keep the
+     * shopper's payment method reusable, which is only justified when SecureHold
+     * will later need it to place a hold. On a cart with no deposit it is a side
+     * effect on someone else's payment.
+     *
+     * The answer comes from the same computation the cart and the scheduler use,
+     * so a deposit that is filtered out by an exclusion rule, or by the minimum
+     * cart amount, correctly reads as "no deposit" here too. This deliberately
+     * does not test whether the plugin is active or whether some product carries
+     * a meta key — neither answers the question.
+     *
+     * @return bool|null true when a deposit is due, false when none is,
+     *                   null when this request has no cart to judge by.
+     */
+    private function should_inject_sfu_for_current_checkout() {
+        // Request-local only. The answer describes the cart being paid for in
+        // this request, so it must never outlive it — no transient, no option.
+        if ($this->sfu_gate_answer !== self::SFU_GATE_UNSET) {
+            return $this->sfu_gate_answer;
+        }
+
+        $this->sfu_gate_answer = $this->resolve_sfu_gate();
+
+        if ($this->sfu_gate_answer === null && function_exists('securehold_log')) {
+            // Worth a line: a Stripe checkout request with no cart behind it is
+            // the order-pay page or a flow we have not mapped. Logged once per
+            // request, and only for the undetermined case — a checkout without a
+            // deposit is ordinary and must stay silent.
+            securehold_log('[Layer2] No cart context for this checkout; injecting as before', array(
+                'is_ajax'  => function_exists('wp_doing_ajax') ? wp_doing_ajax() : false,
+                'is_rest'  => defined('REST_REQUEST') && REST_REQUEST,
+            ), 'warning');
+        }
+
+        return $this->sfu_gate_answer;
+    }
+
+    /**
+     * Resolve the deposit question for this request. See the caller for context.
+     *
+     * @return bool|null
+     */
+    private function resolve_sfu_gate() {
+        if (!function_exists('WC')) {
+            return null;
+        }
+
+        $wc = WC();
+        if (empty($wc->cart)) {
+            return null;
+        }
+
+        // An empty cart is not "no deposit": it means the payment was started
+        // somewhere other than a cart checkout — the order-pay page, most often.
+        // Answering false there would strip the reusable payment method from a
+        // deposit order, so the question stays undetermined instead.
+        $cart_items = $wc->cart->get_cart();
+        if (empty($cart_items)) {
+            return null;
+        }
+
+        if (!class_exists('Securehold_Deposit_Computation_Service')) {
+            if (!defined('SECUREHOLD_PLUGIN_DIR')) {
+                return null;
+            }
+            $service = SECUREHOLD_PLUGIN_DIR . 'includes/services/class-securehold-wp-computation-service.php';
+            if (!file_exists($service)) {
+                return null;
+            }
+            require_once $service;
+        }
+
+        $result = Securehold_Deposit_Computation_Service::compute_for_cart($cart_items);
+
+        return !empty($result['has_hold']);
+    }
+
+    /**
+     * Inject setup_future_usage into a Stripe Checkout Session request.
+     *
+     * Optimized Checkout hands Stripe a session and lets it mint the
+     * PaymentIntent, so there is no /v1/payment_intents request to amend. The
+     * session accepts payment_intent_data, which is where the value belongs.
+     *
+     * Scope is deliberately identical to the PaymentIntent path: every checkout
+     * payment, not only orders that will carry a deposit. Layer 2 has never had
+     * an order-level guard and cannot have one — the session is built from the
+     * cart, before any WooCommerce order exists — and a payment method that was
+     * not made reusable at checkout cannot be made reusable afterwards.
+     *
+     * @since 3.4.4
+     *
+     * @param array  $parsed_args    HTTP request args.
+     * @param string $url            Request URL.
+     * @param mixed  $body           Raw body.
+     * @param array  $body_array     Parsed body.
+     * @param bool   $body_is_string Whether the raw body is a string.
+     * @return array Modified args.
+     */
+    private function layer2_inject_into_checkout_session($parsed_args, $url, $body, $body_array, $body_is_string) {
+
+        // payment_intent_data only applies to sessions that create a
+        // PaymentIntent. Both creation sites in the gateway use mode=payment;
+        // anything else is left alone rather than assumed compatible.
+        $mode = isset($body_array['mode']) ? $body_array['mode'] : null;
+
+        if ($mode !== 'payment') {
+            return $parsed_args;
+        }
+
+        $intent_data = isset($body_array['payment_intent_data']) && is_array($body_array['payment_intent_data'])
+            ? $body_array['payment_intent_data']
+            : array();
+
+        $current_sfu = isset($intent_data['setup_future_usage']) ? $intent_data['setup_future_usage'] : null;
+
+        if ($current_sfu === 'off_session') {
+            return $parsed_args;
+        }
+
+        if (!empty($current_sfu)) {
+            // Something else asked for a different reusability. Overwriting it
+            // silently would start a fight between plugins that the merchant
+            // could never see; the value stands and the disagreement is recorded.
+            if (function_exists('securehold_log')) {
+                securehold_log('[Layer2] Checkout Session already requests a different setup_future_usage — left unchanged', array(
+                    'url'         => $this->sanitize_stripe_url($url),
+                    'sfu_present' => $current_sfu,
+                ), 'warning');
+            }
+            return $parsed_args;
+        }
+
+        if ($body_is_string) {
+            // Bracket notation, encoded the way WordPress encodes a body, so the
+            // existing keys of payment_intent_data — the gateway's metadata among
+            // them — are untouched.
+            $separator = empty($body) ? '' : '&';
+            $parsed_args['body'] = $body . $separator . 'payment_intent_data%5Bsetup_future_usage%5D=off_session';
+        } else {
+            $intent_data['setup_future_usage'] = 'off_session';
+            $body_array['payment_intent_data'] = $intent_data;
+            $parsed_args['body'] = $body_array;
+        }
+
+        $this->layer2_http_injected = true;
+
+        if (function_exists('securehold_log')) {
+            securehold_log('[Layer2] setup_future_usage injected into Stripe Checkout Session payment_intent_data', array(
+                'url'       => $this->sanitize_stripe_url($url),
+                'body_type' => $body_is_string ? 'string' : 'array',
+            ), 'debug');
+        }
+
+        return $parsed_args;
+    }
+
+    /**
      * Sanitize Stripe URL for logging (keep path, mask version-specific params).
      * @param string $url
      * @return string
@@ -507,6 +730,12 @@ class Securehold_Checkout {
             return;
         }
 
+        // Which call was in flight when it failed. "No such payment_intent" from
+        // the retrieve below used to land in the update's catch block and be
+        // reported as an unsupported PaymentIntent status — a statement about a
+        // PaymentIntent that had never been read.
+        $stage = 'retrieve';
+
         try {
             if (class_exists('SecureHold_Stripe')) {
                 SecureHold_Stripe::init_stripe();
@@ -533,6 +762,7 @@ class Securehold_Checkout {
                     ), 'debug');
                 }
                 $order->update_meta_data('_securehold_sfu_injection_layer', $this->layer2_http_injected ? 'layer2_http' : ($this->layer1_hook_fired ? 'layer1_filter' : 'gateway_native'));
+                $order->update_meta_data('_securehold_sfu_update_result', 'already_off_session');
                 $order->save();
                 return;
             }
@@ -549,6 +779,7 @@ class Securehold_Checkout {
             }
 
             // Try to update the PI
+            $stage = 'update';
             $updated_intent = \Stripe\PaymentIntent::update($intent_id, array(
                 'setup_future_usage' => 'off_session',
             ));
@@ -565,6 +796,7 @@ class Securehold_Checkout {
                     ), 'info');
                 }
                 $order->update_meta_data('_securehold_sfu_injection_layer', 'layer3_api_update');
+                $order->update_meta_data('_securehold_sfu_update_result', 'updated');
                 $order->save();
             } else {
                 if (function_exists('securehold_log')) {
@@ -574,26 +806,113 @@ class Securehold_Checkout {
                         'sfu_after_update' => $new_sfu,
                     ), 'warning');
                 }
+                $order->update_meta_data('_securehold_sfu_update_result', 'accepted_but_not_applied');
+                $order->save();
             }
 
-        } catch (\Stripe\Exception\InvalidRequestException $e) {
-            // Stripe may reject update on certain PI statuses (e.g., already succeeded with SCA)
-            if (function_exists('securehold_log')) {
-                securehold_log('[Layer3] Stripe rejected SFU update (may be unsupported for this PI status)', array(
-                    'order_id'  => $order_id,
-                    'intent_id' => $intent_id,
-                    'error'     => $e->getMessage(),
-                    'pi_status' => !empty($intent) ? $intent->status : 'unknown',
-                ), 'warning');
-            }
         } catch (\Exception $e) {
-            if (function_exists('securehold_log')) {
-                securehold_log('[Layer3] Failed to update PI with SFU', array(
-                    'order_id'  => $order_id,
-                    'intent_id' => $intent_id,
-                    'error'     => $e->getMessage(),
-                ), 'error');
-            }
+            // One catch, then classify from what the SDK reports. The previous
+            // two-branch version guessed from the exception class alone, which
+            // could not tell an inaccessible PaymentIntent from a PaymentIntent
+            // whose state refused the change — and quietly swallowed rate
+            // limiting, since RateLimitException extends InvalidRequestException.
+            $this->log_layer3_failure($order, $order_id, $intent_id, $stage, $e);
+        }
+    }
+
+    /**
+     * Report a Layer 3 failure for what it is.
+     *
+     * Records the outcome on the order under _securehold_sfu_update_result, in
+     * the same family as _securehold_sfu_update_attempted and
+     * _securehold_sfu_injection_layer, so the support bundle picks it up without
+     * a new mechanism.
+     *
+     * @since 3.4.4
+     *
+     * @param WC_Order  $order     Order being processed.
+     * @param int       $order_id  Order ID.
+     * @param string    $intent_id PaymentIntent ID.
+     * @param string    $stage     retrieve|update — which call failed.
+     * @param Exception $e         Exception thrown by the SDK.
+     * @return void
+     */
+    private function log_layer3_failure($order, $order_id, $intent_id, $stage, $e) {
+
+        $classified = class_exists('SecureHold_Stripe') && method_exists('SecureHold_Stripe', 'classify_stripe_exception')
+            ? SecureHold_Stripe::classify_stripe_exception($e)
+            : array( 'code' => 'stripe_unknown_error', 'severity' => 'warning', 'detail' => array() );
+
+        $code = $classified['code'];
+
+        switch ($code) {
+            case 'stripe_context_mismatch_confirmed':
+                $message = '[Layer3] WooCommerce PaymentIntent is not accessible with the current SecureHold Stripe context';
+                break;
+
+            case 'stripe_context_mismatch_suspected':
+            case 'stripe_object_not_accessible':
+                $message = '[Layer3] WooCommerce PaymentIntent could not be accessed with the current SecureHold credentials — Stripe context not confirmed';
+                break;
+
+            case 'stripe_credentials_rejected':
+                $message = '[Layer3] Stripe rejected the SecureHold credentials';
+                break;
+
+            case 'stripe_permission_denied':
+                $message = '[Layer3] The SecureHold key is not permitted to perform this operation';
+                break;
+
+            case 'stripe_state_conflict':
+                // Stripe returned payment_intent_unexpected_state, so this is the
+                // one case where talking about the PaymentIntent state is factual.
+                $message = '[Layer3] Stripe rejected the setup_future_usage update because the PaymentIntent state does not allow this operation';
+                break;
+
+            case 'stripe_sfu_update_refused':
+                $message = '[Layer3] Stripe refused the setup_future_usage value for this PaymentIntent';
+                break;
+
+            case 'stripe_api_unreachable':
+                $message = '[Layer3] Stripe API could not be reached while attempting the post-payment SFU update';
+                break;
+
+            case 'stripe_parameter_rejected':
+                $message = '[Layer3] Stripe rejected a parameter of the setup_future_usage update';
+                break;
+
+            default:
+                $message = '[Layer3] The post-payment setup_future_usage update failed';
+                break;
+        }
+
+        // Stripe composes its own messages, so redact before the row is written
+        // rather than relying on the support bundle to clean it at export time:
+        // the credential should never reach the database in the first place.
+        $safe_error = $e->getMessage();
+
+        if (!class_exists('Securehold_Support_Bundle') && defined('SECUREHOLD_PLUGIN_DIR')) {
+            require_once SECUREHOLD_PLUGIN_DIR . 'includes/class-securehold-wp-support-bundle.php';
+        }
+        if (class_exists('Securehold_Support_Bundle')) {
+            $safe_error = Securehold_Support_Bundle::redact($safe_error);
+        }
+
+        if (function_exists('securehold_log')) {
+            // Message text only — never the exception object, which can carry the
+            // full PaymentIntent and PaymentMethod payloads.
+            securehold_log($message, array_merge(array(
+                'order_id'   => $order_id,
+                'intent_id'  => $intent_id,
+                'stage'      => $stage,
+                'diagnostic' => $code,
+                'error'      => $safe_error,
+            ), $classified['detail']), $classified['severity']);
+        }
+
+        if ($order) {
+            $order->update_meta_data('_securehold_sfu_update_result', $code);
+            $order->save();
         }
     }
 
@@ -854,22 +1173,30 @@ class Securehold_Checkout {
     // HELPERS
     // =========================================================================
 
+    /**
+     * Usable payment reference stored on the order.
+     *
+     * Delegates to the canonical resolver so this file no longer carries its own
+     * fallback order. It used to return a legacy src_ or card_ as if it were a
+     * payment method, which made the caller believe resolution was complete: the
+     * PaymentIntent fallback was skipped, and the unusable reference was copied
+     * into _stripe_payment_method, spreading it further.
+     *
+     * @since 3.4.4 Delegates to SecureHold_Stripe::get_payment_method_token_from_order().
+     *
+     * @param WC_Order $order Order to inspect.
+     * @return string A pm_ identifier, or ''.
+     */
     private function get_payment_method_from_order($order) {
-        $pm = $order->get_meta('_stripe_payment_method', true);
-        if (!empty($pm) && strpos($pm, 'pm_') === 0) return $pm;
-
-        $source = $order->get_meta('_stripe_source_id', true);
-        if (!empty($source)) return $source;
-
-        $card = $order->get_meta('_stripe_card_id', true);
-        if (!empty($card)) return $card;
-
         if (class_exists('SecureHold_Stripe') && method_exists('SecureHold_Stripe', 'get_payment_method_token_from_order')) {
-            $token = SecureHold_Stripe::get_payment_method_token_from_order($order);
-            if (!empty($token)) return $token;
+            return SecureHold_Stripe::get_payment_method_token_from_order($order);
         }
 
-        return '';
+        // Fallback if the Stripe wrapper is unavailable: modern key only, never a
+        // legacy reference.
+        $pm = $order->get_meta('_stripe_payment_method', true);
+
+        return (!empty($pm) && strpos($pm, 'pm_') === 0) ? $pm : '';
     }
 
     private function resolve_stripe_data_from_intent($order) {

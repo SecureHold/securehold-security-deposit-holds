@@ -309,6 +309,36 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                 <strong><?php esc_html_e( 'Immediate', 'securehold-security-deposit-holds' ); ?></strong>
             </label>
             <?php do_action( 'securehold_timing_cards', $capture_timing ); ?>
+            <?php if ( ! has_action( 'securehold_timing_cards' ) ) : ?>
+                <!--
+                    FREE preview only — no PRO strategy logic, no radio input, no
+                    POST value. Purely visual, matching PRO's real timing cards
+                    (rendered via the securehold_timing_cards hook above) so the
+                    layout doesn't shift when PRO is installed.
+
+                    Gated on has_action() rather than securehold_pro_automations_enabled():
+                    PRO's render_timing_cards() renders unconditionally whenever PRO is
+                    active and hooked, regardless of license/feature-flag state, so hook
+                    presence — not the (license-gated) feature flag — is what determines
+                    whether the real cards are already on the page. This avoids ever
+                    showing this preview next to PRO's real cards.
+                -->
+                <div class="timing-card timing-card--locked" aria-disabled="true">
+                    <span class="dashicons dashicons-backup"></span>
+                    <strong><?php esc_html_e( 'Delayed', 'securehold-security-deposit-holds' ); ?></strong>
+                    <span class="sh-pro-badge"><?php esc_html_e( 'PRO', 'securehold-security-deposit-holds' ); ?></span>
+                </div>
+                <div class="timing-card timing-card--locked" aria-disabled="true">
+                    <span class="dashicons dashicons-calendar-alt"></span>
+                    <strong><?php esc_html_e( 'Scheduled', 'securehold-security-deposit-holds' ); ?></strong>
+                    <span class="sh-pro-badge"><?php esc_html_e( 'PRO', 'securehold-security-deposit-holds' ); ?></span>
+                </div>
+                <div class="timing-card timing-card--locked" aria-disabled="true">
+                    <span class="dashicons dashicons-list-view"></span>
+                    <strong><?php esc_html_e( 'By Status', 'securehold-security-deposit-holds' ); ?></strong>
+                    <span class="sh-pro-badge"><?php esc_html_e( 'PRO', 'securehold-security-deposit-holds' ); ?></span>
+                </div>
+            <?php endif; ?>
             <label class="timing-card <?php echo $capture_timing === 'manual' ? 'selected' : ''; ?>">
                 <input type="radio" name="securehold_capture_timing" value="manual" <?php checked( $capture_timing, 'manual' ); ?>>
                 <span class="dashicons dashicons-admin-users"></span>
@@ -338,6 +368,32 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                     <strong><?php esc_html_e( 'Automation Disabled', 'securehold-security-deposit-holds' ); ?></strong>
                     <p><?php esc_html_e( 'No security deposits will be created automatically. You must click "Create Hold Now" on each order page.', 'securehold-security-deposit-holds' ); ?></p>
                 </div>
+            </div>
+        </div>
+
+        <div class="sh-divider-gradient"></div>
+
+        <!-- MagePeople compatibility bridge (opt-in) -->
+        <h3 class="sh-section-heading">
+            <span class="dashicons dashicons-admin-plugins" style="color: var(--sh-gray-600);"></span>
+            <?php esc_html_e( 'Third-Party Compatibility', 'securehold-security-deposit-holds' ); ?>
+        </h3>
+        <?php $mp_enabled = get_option( 'securehold_magepeople_deposit_enabled', 'no' ); ?>
+        <div style="margin-bottom: 2rem;">
+            <div class="sh-input-field">
+                <label class="sh-toggle-row" style="display:flex;align-items:center;gap:0.75rem;cursor:pointer;">
+                    <input type="checkbox"
+                           name="securehold_magepeople_deposit_enabled"
+                           value="yes"
+                           <?php checked( $mp_enabled, 'yes' ); ?>>
+                    <span class="sh-label-modern" style="margin:0;cursor:pointer;">
+                        <?php esc_html_e( 'Use MagePeople security deposit amounts', 'securehold-security-deposit-holds' ); ?>
+                    </span>
+                </label>
+                <p class="description" style="margin-top:0.5rem;">
+                    <span class="dashicons dashicons-info-outline" style="font-size:14px;width:14px;height:14px;vertical-align:middle;color:var(--sh-gray-400);"></span>
+                    <?php esc_html_e( 'When a Rent Item (Booking and Rental Manager by MagePeople) has a fixed-amount Security Deposit configured, use it automatically instead of requiring a separate SecureHold Product Rule. An explicit SecureHold Product Rule always takes priority over this. Percentage-type MagePeople deposits are not supported yet and are ignored.', 'securehold-security-deposit-holds' ); ?>
+                </p>
             </div>
         </div>
 

@@ -17,6 +17,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Securehold_Scheduler {
 
     /**
+     * Lifetime of the cross-request hold-creation lock, in seconds.
+     *
+     * Sized to outlast one full creation run rather than to throttle retries.
+     * A run issues a bounded series of Stripe calls (retrieve / detach / attach /
+     * customer update / intent create, plus the clone fallback), each of which
+     * normally answers in well under a second. 90s leaves ample room for a slow
+     * Stripe round-trip while keeping a lock orphaned by a fatal error or a
+     * killed worker short enough that no merchant is left blocked.
+     *
+     * This is NOT a retry cooldown: the lock is released on every exit path,
+     * including failure, so a deliberate retry after a real Stripe error is
+     * available immediately. The TTL only ever applies to a crashed process.
+     *
+     * @since 3.4.4
+     */
+    const HOLD_LOCK_TTL = 90;
+
+    /**
      * Register WP-Cron action hooks.
      *
      * @since 1.0.0
@@ -258,18 +276,392 @@ class Securehold_Scheduler {
     /**
      * Main entry point for hold creation across all timing strategies.
      *
-     * Evaluates the configured strategy (immediate, delayed, scheduled, status-based),
-     * checks the deposit gate, and routes to the correct creation path.
-     * Includes a 60-second deduplication guard to prevent double execution on the same order.
+     * Idempotence wrapper. Every caller reaches hold creation through here:
+     * WooCommerce status hooks, the order metabox, the manual AJAX button,
+     * execute_force_hold() (cron), and the PRO retry tool. Two guards ensure a
+     * single logical creation per order, whatever the entry point:
+     *
+     *   Level 1 — per-request static guard. Neutralises repeat calls inside one
+     *   PHP request. This covers legacy (non-HPOS) order saves, where the
+     *   metabox handler runs on both save_post_shop_order and
+     *   woocommerce_process_shop_order_meta, and re-entrancy through
+     *   woocommerce_order_status_changed fired by $order->save() below.
+     *
+     *   Level 2 — cross-request lock. Covers genuine concurrency that a static
+     *   variable cannot see: parallel AJAX requests, cron overlapping with an
+     *   admin action, or several PHP workers on the same order.
+     *
+     * Both guards return true — the convention already used by the "skipped"
+     * paths in run_hold_creation() — meaning "nothing to do, handled elsewhere".
+     * They never mask a genuine failure: the lock is released on every exit
+     * path, so a deliberate retry after a real Stripe error still works
+     * immediately.
      *
      * @since 1.0.0
+     * @since 3.4.4 Added the two idempotence guards.
      *
      * @param int  $order_id        WooCommerce order ID.
      * @param bool $force_execution Skip the deduplication guard and re-execute immediately.
      *                              Used by execute_force_hold() when a cron-deferred hold fires.
-     * @return bool|void  True if the hold was skipped (already in a final state), void otherwise.
+     * @return bool|WP_Error|void  True when skipped or already handled, WP_Error on
+     *                             Stripe failure, void otherwise.
      */
     public function create_hold_for_order($order_id, $force_execution = false) {
+
+        $order_id = (int) $order_id;
+        if ( $order_id <= 0 ) {
+            return false;
+        }
+
+        // ── Level 1: per-request guard ──
+        // Set before running so a nested call (re-entrancy via $order->save())
+        // sees the order as already in flight instead of starting a second run.
+        static $in_flight = array();
+
+        if ( array_key_exists( $order_id, $in_flight ) ) {
+            if ( function_exists( 'securehold_log' ) ) {
+                securehold_log( 'Scheduler: Skipped (already handled in this request)', array(
+                    'order_id' => $order_id,
+                    'force'    => $force_execution,
+                ), 'debug' );
+            }
+            return true;
+        }
+
+        // ── Level 2: cross-request lock ──
+        $lock_token = self::acquire_hold_lock( $order_id );
+
+        if ( $lock_token === false ) {
+            if ( function_exists( 'securehold_log' ) ) {
+                securehold_log( 'Scheduler: Skipped (hold creation already in progress)', array(
+                    'order_id' => $order_id,
+                    'force'    => $force_execution,
+                ), 'warning' );
+            }
+            return true;
+        }
+
+        $in_flight[ $order_id ] = true;
+
+        try {
+            $result = $this->run_hold_creation( $order_id, $force_execution );
+
+            // Blocks moves a draft order to pending before it calls Stripe, so
+            // the first attempt runs with no PaymentIntent and no
+            // PaymentMethod and fails for want of data that arrives moments
+            // later. Measured on staging: the premature call ran 4.7 seconds
+            // before three further hooks fired in the same request, all with
+            // both values present, and all three were turned away by this
+            // guard. Holding it while the run is in flight is right; holding
+            // it after that failure is what left the deposit uncreated.
+            //
+            // Only this one error code is transient. Anything else — a Stripe
+            // refusal, a gate decision — is an answer, and keeps the latch.
+            if ( is_wp_error( $result ) && $result->get_error_code() === 'missing_stripe_data' ) {
+                unset( $in_flight[ $order_id ] );
+            }
+
+            return $result;
+        } finally {
+            // Released on success, on WP_Error and on any uncaught throwable, so
+            // a legitimate retry is never blocked by a leftover lock. Conditional
+            // on our own token: a run whose lock expired and was reclaimed must
+            // not delete the new holder's row on its way out.
+            self::release_hold_lock( $order_id, $lock_token );
+        }
+    }
+
+    /**
+     * Acquire the cross-request hold-creation lock for an order.
+     *
+     * Mutual exclusion rests on a single INSERT IGNORE: MySQL either creates the
+     * row or it does not, and the affected-row count says which happened. No
+     * read precedes it, so no two callers can both conclude the row was absent.
+     *
+     * This replaces an add_option() based acquisition. That worked while
+     * WordPress compiled add_option() to an INSERT ... ON DUPLICATE KEY UPDATE
+     * whose UPDATE was a no-op, making a collision report zero affected rows.
+     * WordPress 7.1 writes option_value and autoload in that UPDATE, so a
+     * collision now reports rows changed and add_option() returns true — leaving
+     * only its cache-backed get_option() pre-check, which is not atomic and which
+     * two concurrent callers can both pass.
+     *
+     * The stored value is an ownership token and an expiry, nothing else: no
+     * order data, no credential.
+     *
+     * @since 3.4.4
+     *
+     * @param int $order_id WooCommerce order ID.
+     * @return string|false Owner token when acquired, false when another process holds it.
+     */
+    private static function acquire_lock( $lock_key ) {
+        global $wpdb;
+
+        $token    = self::new_lock_token();
+        $value    = $token . '|' . ( time() + self::HOLD_LOCK_TTL );
+
+        // INSERT IGNORE: one row created, or none. Never an overwrite.
+        $inserted = $wpdb->query(
+            $wpdb->prepare(
+                "INSERT IGNORE INTO `{$wpdb->options}` (`option_name`, `option_value`, `autoload`) VALUES (%s, %s, 'no')",
+                $lock_key,
+                $value
+            )
+        );
+
+        // Direct SQL bypasses the options cache, so a later get_option() for this
+        // name would otherwise answer from a stale 'notoptions' entry.
+        self::forget_lock_cache( $lock_key );
+
+        if ( $inserted ) {
+            return $token;
+        }
+
+        // A row exists. Take it over only if it has expired, and only by swapping
+        // the exact value we just read: if another process got there first, its
+        // write changed the value and this UPDATE matches nothing.
+        $current = $wpdb->get_var(
+            $wpdb->prepare( "SELECT option_value FROM `{$wpdb->options}` WHERE option_name = %s LIMIT 1", $lock_key )
+        );
+
+        if ( $current === null ) {
+            // Released between the INSERT and this read. Leave it to the next
+            // attempt rather than looping.
+            return false;
+        }
+
+        $expires_at = self::lock_expiry( $current );
+
+        if ( $expires_at > time() ) {
+            return false;
+        }
+
+        $swapped = $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE `{$wpdb->options}` SET `option_value` = %s WHERE `option_name` = %s AND `option_value` = %s",
+                $value,
+                $lock_key,
+                $current
+            )
+        );
+
+        self::forget_lock_cache( $lock_key );
+
+        if ( ! $swapped ) {
+            // Someone else reclaimed it first.
+            return false;
+        }
+
+        if ( function_exists( 'securehold_log' ) ) {
+            securehold_log( 'Scheduler: Reclaimed stale hold lock', array(
+                'order_id'   => $order_id,
+                'expired_at' => $expires_at,
+                'ttl'        => self::HOLD_LOCK_TTL,
+            ), 'warning' );
+        }
+
+        return $token;
+    }
+
+    /**
+     * Release the lock, but only if we still own it.
+     *
+     * The delete is conditional on the exact token written at acquisition. A
+     * process whose lock expired and was reclaimed by someone else must not be
+     * able to delete the new owner's row on its way out — which an unconditional
+     * delete would do, handing a third process a lock the second still believes
+     * it holds.
+     *
+     * @since 3.4.4
+     *
+     * @param int         $order_id WooCommerce order ID.
+     * @param string|null $token    Token returned by acquire_hold_lock().
+     * @return void
+     */
+    private static function release_lock( $lock_key, $token = null ) {
+        global $wpdb;
+
+        if ( empty( $token ) ) {
+            return;
+        }
+
+        $wpdb->query(
+            $wpdb->prepare(
+                "DELETE FROM `{$wpdb->options}` WHERE `option_name` = %s AND `option_value` LIKE %s",
+                $lock_key,
+                $wpdb->esc_like( $token . '|' ) . '%'
+            )
+        );
+
+        self::forget_lock_cache( $lock_key );
+    }
+
+    /**
+     * Random ownership token. Not a secret — it identifies a holder, and never
+     * carries order or credential data.
+     *
+     * @since 3.4.4
+     * @return string
+     */
+    private static function new_lock_token() {
+        if ( function_exists( 'wp_generate_uuid4' ) ) {
+            return wp_generate_uuid4();
+        }
+
+        return uniqid( 'sh', true );
+    }
+
+    /**
+     * Expiry timestamp encoded in a stored lock value.
+     *
+     * Values written before this format existed carry a bare timestamp; those are
+     * read as an acquisition time so they still expire rather than blocking an
+     * order forever.
+     *
+     * @since 3.4.4
+     *
+     * @param string $value Stored option value.
+     * @return int Unix timestamp.
+     */
+    private static function lock_expiry( $value ) {
+        $value = (string) $value;
+
+        if ( strpos( $value, '|' ) !== false ) {
+            $parts = explode( '|', $value, 2 );
+            return (int) $parts[1];
+        }
+
+        return (int) $value + self::HOLD_LOCK_TTL;
+    }
+
+    /**
+     * Drop the options-cache entries for a lock written through direct SQL.
+     *
+     * @since 3.4.4
+     *
+     * @param string $lock_key Option name.
+     * @return void
+     */
+    private static function forget_lock_cache( $lock_key ) {
+        if ( function_exists( 'wp_cache_delete' ) ) {
+            wp_cache_delete( $lock_key, 'options' );
+            wp_cache_delete( 'notoptions', 'options' );
+        }
+    }
+
+    /**
+     * Option name backing the hold-creation lock for an order.
+     *
+     * @since 3.4.4
+     *
+     * @param int $order_id WooCommerce order ID.
+     * @return string
+     */
+    private static function hold_lock_key( $order_id ) {
+        return 'securehold_hold_lock_' . (int) $order_id;
+    }
+
+    /**
+     * Key for the lock covering the terminal operations.
+     *
+     * Deliberately distinct from the creation lock: a deposit still being
+     * created must not block a capture, and the two belong to different phases
+     * of the deposit's life. Capture and release share this one key, so a
+     * capture and a release fired at the same moment contend for it instead of
+     * both reaching Stripe.
+     *
+     * @param int $order_id
+     * @return string
+     */
+    private static function terminal_lock_key( $order_id ) {
+        return 'securehold_terminal_lock_' . (int) $order_id;
+    }
+
+    /**
+     * Acquire the creation lock. Thin wrapper over the shared primitive.
+     *
+     * @param int $order_id
+     * @return string|false Owner token, or false when someone else holds it.
+     */
+    public static function acquire_hold_lock( $order_id ) {
+        return self::acquire_lock( self::hold_lock_key( $order_id ) );
+    }
+
+    /**
+     * @param int         $order_id
+     * @param string|null $token Token returned by acquire_hold_lock().
+     * @return void
+     */
+    public static function release_hold_lock( $order_id, $token = null ) {
+        self::release_lock( self::hold_lock_key( $order_id ), $token );
+    }
+
+    /**
+     * Acquire the lock guarding capture and release.
+     *
+     * Staging showed two simultaneous captures both reaching Stripe, with only
+     * Stripe's own refusal preventing a double charge. The protection worked
+     * but was borrowed, not designed. This is the same atomic mechanism the
+     * creation path has used since the lock was made atomic — one
+     * implementation, two keys.
+     *
+     * @param int $order_id
+     * @return string|false
+     */
+    public static function acquire_terminal_lock( $order_id ) {
+        return self::acquire_lock( self::terminal_lock_key( $order_id ) );
+    }
+
+    /**
+     * @param int         $order_id
+     * @param string|null $token Token returned by acquire_terminal_lock().
+     * @return void
+     */
+    public static function release_terminal_lock( $order_id, $token = null ) {
+        self::release_lock( self::terminal_lock_key( $order_id ), $token );
+    }
+
+    /**
+     * Record that a deposit was due and could not be created.
+     *
+     * Staging showed an order charged in full with no deposit and nothing on
+     * the order to say so — the only trace was one row in the log table, which
+     * nobody reads until a customer complains. This marker is what the support
+     * bundle and the admin notice read.
+     *
+     * Deliberately written even for the transient failure Blocks produces on
+     * every order: the retry a moment later deletes it again, and an order that
+     * never reaches that retry is exactly the one worth surfacing.
+     *
+     * @param WC_Order $order  Order the deposit was due on.
+     * @param string   $code   Machine-readable reason.
+     * @param string   $detail Human-readable detail. Never a Stripe payload.
+     * @return void
+     */
+    private static function record_hold_failure( $order, $code, $detail ) {
+        if ( ! $order || ! method_exists( $order, 'update_meta_data' ) ) {
+            return;
+        }
+
+        $order->update_meta_data( '_securehold_hold_failed', array(
+            'code'   => $code,
+            'detail' => $detail,
+            'at'     => current_time( 'mysql' ),
+        ) );
+        $order->save();
+    }
+
+    /**
+     * Actual hold creation. Reached only through create_hold_for_order(),
+     * which owns the idempotence guards.
+     *
+     * @since 3.4.4 Extracted unchanged from create_hold_for_order().
+     *
+     * @param int  $order_id        WooCommerce order ID.
+     * @param bool $force_execution Skip the 60-second deduplication guard.
+     * @return bool|WP_Error|void
+     */
+    private function run_hold_creation($order_id, $force_execution = false) {
 
         $order = wc_get_order($order_id);
         if (!$order) return false;
@@ -294,8 +686,14 @@ class Securehold_Scheduler {
                 return true;
             }
 
-            $order->update_meta_data('_securehold_attempt_made', time());
-            $order->save();
+            // The stamp itself is written much further down, just before the
+            // hold PaymentIntent is created. It used to be written here, before
+            // anything had been resolved, which meant a run that never reached
+            // Stripe still burned the window: on Blocks the premature attempt
+            // stamped the order and the retry four seconds later was turned
+            // away by this very check. This guard exists to stop us hammering
+            // Stripe, and an attempt that never reached Stripe has nothing to
+            // throttle.
         }
 
         if (class_exists('SecureHold_DB')) {
@@ -531,12 +929,13 @@ class Securehold_Scheduler {
                 ), 'debug');
             }
         } else {
-            // Fallback: direct meta read (legacy path)
-            $customer_id = $order->get_meta('_stripe_customer_id', true);
-            $payment_method_id = $order->get_meta('_stripe_payment_method', true);
-            if (empty($payment_method_id)) {
-                $payment_method_id = $order->get_meta('_stripe_source_id', true);
-            }
+            // Fallback when the Stripe wrapper is unavailable. Reads through the
+            // canonical resolver rather than repeating a fallback order of its
+            // own, so a legacy reference is refused here too.
+            $customer_id       = $order->get_meta('_stripe_customer_id', true);
+            $payment_method_id = ( class_exists('SecureHold_Stripe') && method_exists('SecureHold_Stripe', 'get_payment_method_token_from_order') )
+                ? SecureHold_Stripe::get_payment_method_token_from_order($order)
+                : '';
         }
 
         if (empty($customer_id) || empty($payment_method_id)) {
@@ -554,6 +953,8 @@ class Securehold_Scheduler {
                 !empty($customer_id) ? 'found' : 'missing',
                 !empty($payment_method_id) ? 'found' : 'missing'
             ));
+            self::record_hold_failure( $order, 'missing_stripe_data', 'Stripe customer or payment method not available yet' );
+
             return new WP_Error('missing_stripe_data', 'Missing Stripe data after full resolution');
         }
 
@@ -653,6 +1054,19 @@ class Securehold_Scheduler {
             }
         }
 
+        // Last safe point before the only call that creates anything at
+        // Stripe. Everything needed is resolved, the gate has passed, and the
+        // amount is known — so this is a real attempt and it should occupy the
+        // deduplication window checked at the top of this method.
+        //
+        // Still confined to the non-force path: the admin metabox, the cron
+        // callback and the PRO retry tool deliberately bypass the window, and
+        // stamping the order here would start throttling them.
+        if (!$force_execution) {
+            $order->update_meta_data('_securehold_attempt_made', time());
+            $order->save();
+        }
+
         $intent = SecureHold_Stripe::create_payment_intent($amount, $currency, $customer_id, $payment_method_id, $order_id);
 
         if (is_wp_error($intent)) {
@@ -678,8 +1092,17 @@ class Securehold_Scheduler {
                     $failed_note = 'Hold creation failed: Payment method is single-use and cannot be reused for an off-session hold. ' .
                         'SecureHold WP automatically configures reusability via checkout engine filters, but this payment method type may have additional constraints. ' .
                         'Run the SecureHold checkout diagnostic in Tools > Diagnostics for details.';
-                } elseif ( $error_code === 'account_mismatch' ) {
-                    $failed_note = __( 'Hold creation failed: The payment appears to belong to a different Stripe account or environment than the one currently configured in SecureHold WP. Please verify that WooCommerce Stripe and SecureHold WP use the same Stripe account and the same mode (test/live).', 'securehold-security-deposit-holds' );
+                } elseif ( $error_code === 'stripe_context_mismatch_confirmed' || $error_code === 'account_mismatch' ) {
+                    // Confirmed by the Stripe context diagnosis, so the strong
+                    // wording is earned. 'account_mismatch' is the pre-3.4.4 code,
+                    // still handled for holds that failed before the upgrade.
+                    $failed_note = __( 'Hold creation failed: SecureHold WP and the WooCommerce Stripe Gateway are using incompatible Stripe contexts. The payment does not exist in the Stripe account or environment SecureHold WP is configured with. Copy the API keys from the Stripe environment where this payment appears.', 'securehold-security-deposit-holds' );
+                } elseif ( $error_code === 'stripe_context_mismatch_suspected' || $error_code === 'stripe_object_not_accessible' ) {
+                    // Not established. The object is unreachable, which has more
+                    // than one ordinary cause, so the wording stays careful.
+                    $failed_note = __( 'Hold creation failed: this Stripe object could not be accessed with the current SecureHold WP credentials. The object may belong to another Stripe environment, or the stored payment reference may no longer be valid. Run the Stripe context check in SecureHold WP > Health Check for a verdict.', 'securehold-security-deposit-holds' );
+                } elseif ( $error_code === 'legacy_payment_method' || $error_code === 'invalid_payment_reference' ) {
+                    $failed_note = __( 'Hold creation failed: the payment reference stored on this order is not a reusable Stripe payment method. Orders taken through older versions of the WooCommerce Stripe Gateway can carry a legacy source or card reference, which cannot be used for an off-session security deposit. This does not indicate a problem with your Stripe configuration.', 'securehold-security-deposit-holds' );
                 } else {
                     $failed_note = sprintf(
                         /* translators: %s = error message */
@@ -713,6 +1136,7 @@ class Securehold_Scheduler {
 
                 // Update order meta
                 $order->update_meta_data('_securehold_deposit_status', 'failed');
+                self::record_hold_failure( $order, 'stripe_error', 'Stripe refused the hold PaymentIntent' );
                 $order->delete_meta_data('_securehold_deposit_next_run');
                 $order->save();
 
@@ -758,6 +1182,11 @@ class Securehold_Scheduler {
             }
         }
 
+        // One reading of the clock for the whole operation. Two calls a few
+        // milliseconds apart would have the insert and the update branches
+        // disagree about the same authorization.
+        $authorized_at = current_time('mysql');
+
         $hold_data = array(
             'order_id' => $order_id,
             'customer_id' => $customer_id,
@@ -767,7 +1196,10 @@ class Securehold_Scheduler {
             'captured_amount' => 0,
             'currency' => $currency,
             'status' => 'authorized',
-            'created_at' => current_time('mysql')
+            // The database layer will not date an authorization on its own; the
+            // caller that watched Stripe approve it is the one that knows.
+            'authorized_at' => $authorized_at,
+            'created_at' => $authorized_at
         );
 
         if (class_exists('SecureHold_DB')) {
@@ -782,7 +1214,7 @@ class Securehold_Scheduler {
                     'captured_amount'   => 0,
                     'currency'          => $currency,
                     'status'            => 'authorized',
-                    'authorized_at'     => current_time('mysql'),
+                    'authorized_at'     => $authorized_at,
                     'notes'             => '',
                 ));
             } else {
@@ -804,6 +1236,12 @@ class Securehold_Scheduler {
 
         // Store hold amount so Securehold_Emails::replace_variables() can resolve {hold_amount}.
         $order->update_meta_data( '_securehold_hold_amount', $amount );
+
+        // The deposit exists now, so any earlier failure on this order is
+        // history. Under Blocks the first attempt always fails and the retry
+        // succeeds moments later, so leaving the marker would report a problem
+        // on every single order.
+        $order->delete_meta_data( '_securehold_hold_failed' );
         $order->save();
 
         // Fire deposit-authorized email notification.

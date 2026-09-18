@@ -384,27 +384,21 @@ class SecureHold_Stripe {
                     return new WP_Error('pm_single_use', $actionable_msg);
                 }
 
-                // ── Account mismatch: PM/customer ID belongs to a different Stripe account ──
-                // "No such PaymentMethod: 'pm_...'" is thrown here (during attach),
-                // before PaymentIntent::create() is ever called, so the main catch block
-                // never runs. Detect and classify it here using the same patterns.
-                // Uses stripos() — Stripe capitalisation varies in production logs.
+                // ── Inaccessible Stripe object ──
+                // "No such PaymentMethod: 'pm_...'" is thrown here, during attach,
+                // before PaymentIntent::create() is ever called, so the main catch
+                // block never runs. The classifier qualifies the message with the
+                // Stripe context diagnosis instead of assuming a wrong account.
                 $attach_error_msg = $attach_result->get_error_message();
-                $is_attach_mismatch = (
-                    stripos( $attach_error_msg, 'No such PaymentMethod' )  !== false
-                    || stripos( $attach_error_msg, 'No such payment_method' ) !== false
-                    || stripos( $attach_error_msg, 'No such payment_intent' ) !== false
-                    || stripos( $attach_error_msg, 'No such customer' )       !== false
-                    || stripos( $attach_error_msg, 'connected account' )      !== false
-                );
+                $access_code      = self::classify_stripe_access_error( $attach_error_msg );
 
-                if ( $is_attach_mismatch ) {
+                if ( $access_code ) {
                     if ( $order ) {
-                        $order->update_meta_data( '_securehold_hold_failure_reason',  'account_mismatch' );
+                        $order->update_meta_data( '_securehold_hold_failure_reason',  $access_code );
                         $order->update_meta_data( '_securehold_hold_failure_message', $attach_error_msg );
                         $order->save();
                     }
-                    return new WP_Error( 'account_mismatch', $attach_error_msg );
+                    return new WP_Error( $access_code, $attach_error_msg );
                 }
 
                 return $attach_result; // Other attach errors
@@ -533,28 +527,18 @@ class SecureHold_Stripe {
                 }
             }
 
-            // ── Detect account/environment mismatch error ──
-            // Uses stripos() because Stripe capitalisation varies:
-            //   "No such PaymentMethod: 'pm_...'"  (observed in real logs)
-            //   "No such payment_method: 'pm_...'" (also valid)
-            // These IDs were created at checkout so "No such X" means a different
-            // Stripe account or mode (test vs live) is now configured.
-            $is_account_mismatch = (
-                ! $is_single_use_error
-                && (
-                    stripos( $error_msg, 'No such PaymentMethod' )  !== false
-                    || stripos( $error_msg, 'No such payment_method' ) !== false
-                    || stripos( $error_msg, 'No such payment_intent' ) !== false
-                    || stripos( $error_msg, 'No such customer' )       !== false
-                    || stripos( $error_msg, 'connected account' )      !== false
-                )
-            );
+            // ── Inaccessible Stripe object ──
+            // "No such X" means this identifier cannot be resolved with the
+            // current credentials. That is a fact; a wrong Stripe account is only
+            // one of its causes. The classifier weighs it against the Stripe
+            // context diagnosis before naming the failure.
+            $access_code = $is_single_use_error ? null : self::classify_stripe_access_error( $error_msg );
 
-            if ( $is_account_mismatch ) {
-                $error_code = 'account_mismatch';
+            if ( $access_code ) {
+                $error_code = $access_code;
 
                 if ( $order ) {
-                    $order->update_meta_data( '_securehold_hold_failure_reason',  'account_mismatch' );
+                    $order->update_meta_data( '_securehold_hold_failure_reason',  $access_code );
                     $order->update_meta_data( '_securehold_hold_failure_message', $e->getMessage() );
                     $order->save();
                 }
@@ -767,23 +751,298 @@ class SecureHold_Stripe {
     }
 
     /**
-     * Retrieve a PaymentMethod token from an Order
-     * Checks multiple meta keys for compatibility across WC Stripe Gateway versions.
+     * Meta keys that may carry a payment reference, in resolution order.
+     *
+     * @since 3.4.4
+     */
+    const PAYMENT_REFERENCE_META = array(
+        '_stripe_payment_method',
+        '_stripe_payment_method_id',
+        '_stripe_source_id',
+        '_stripe_card_id',
+    );
+
+    /**
+     * Resolve the payment reference stored on an order, and say what it is.
+     *
+     * Four fallback orders used to coexist — here, in the checkout engine, in the
+     * scheduler's legacy path, and in PRO — and none of them read
+     * _stripe_payment_method_id even though the setup wizard writes it. Worse,
+     * only _stripe_payment_method was checked for a pm_ prefix: a legacy src_ or
+     * card_ sitting in _stripe_source_id was passed straight to
+     * PaymentMethod::retrieve(), which addresses /v1/payment_methods and cannot
+     * resolve a Source or a Card. Stripe answered "No such PaymentMethod", and
+     * SecureHold read that as proof of a wrong Stripe account.
+     *
+     * Pure classification: reads meta, performs no API call, writes nothing. The
+     * caller decides what to do with an unusable reference — normally fall
+     * through to the checkout PaymentIntent, which yields a real pm_.
+     *
+     * @since 3.4.4
+     *
+     * @param WC_Order $order Order to inspect.
+     * @return array {
+     *     @type string      $value       The stored identifier, or ''.
+     *     @type string|null $source_meta Meta key it came from.
+     *     @type string      $object_type payment_method|legacy_source|legacy_card|unknown|none.
+     *     @type bool        $usable      Whether it can be used for an off-session hold.
+     *     @type string|null $reason      Why not, when unusable.
+     * }
+     */
+    public static function resolve_order_payment_reference( $order ) {
+        $none = array(
+            'value'       => '',
+            'source_meta' => null,
+            'object_type' => 'none',
+            'usable'      => false,
+            'reason'      => 'no_payment_reference',
+        );
+
+        if ( ! $order || ! method_exists( $order, 'get_meta' ) ) {
+            return $none;
+        }
+
+        $first_unusable = null;
+
+        foreach ( self::PAYMENT_REFERENCE_META as $meta_key ) {
+            $value = (string) $order->get_meta( $meta_key, true );
+
+            if ( $value === '' ) {
+                continue;
+            }
+
+            $type = self::classify_payment_reference( $value );
+
+            if ( $type === 'payment_method' ) {
+                return array(
+                    'value'       => $value,
+                    'source_meta' => $meta_key,
+                    'object_type' => 'payment_method',
+                    'usable'      => true,
+                    'reason'      => null,
+                );
+            }
+
+            // Remember the first unusable reference so the caller can explain
+            // the failure precisely, but keep scanning: a modern pm_ may still
+            // be stored under a later key.
+            if ( $first_unusable === null ) {
+                $first_unusable = array(
+                    'value'       => $value,
+                    'source_meta' => $meta_key,
+                    'object_type' => $type,
+                    'usable'      => false,
+                    'reason'      => ( $type === 'unknown' ) ? 'invalid_payment_reference' : 'legacy_payment_method',
+                );
+            }
+        }
+
+        return ( $first_unusable !== null ) ? $first_unusable : $none;
+    }
+
+    /**
+     * Object type behind a Stripe identifier, from its prefix.
+     *
+     * @since 3.4.4
+     *
+     * @param string $value Identifier.
+     * @return string payment_method|legacy_source|legacy_card|unknown.
+     */
+    public static function classify_payment_reference( $value ) {
+        $value = (string) $value;
+
+        if ( strpos( $value, 'pm_' ) === 0 ) {
+            return 'payment_method';
+        }
+
+        if ( strpos( $value, 'src_' ) === 0 ) {
+            return 'legacy_source';
+        }
+
+        if ( strpos( $value, 'card_' ) === 0 ) {
+            return 'legacy_card';
+        }
+
+        return 'unknown';
+    }
+
+    /**
+     * Classify a "No such ..." style Stripe error without over-claiming.
+     *
+     * An inaccessible object used to be reported as account_mismatch on its own.
+     * That conclusion holds only when the account really differs, and several
+     * ordinary situations produce the same message: a customer deleted from the
+     * dashboard, an intent id from an imported order, a legacy reference that
+     * was never a PaymentMethod to begin with.
+     *
+     * Securehold_Stripe_Context already knows whether the two plugins share a
+     * Stripe context, so the verdict is qualified with it. Its cached result is
+     * reused — no extra network call is made to classify an error.
+     *
+     * @since 3.4.4
+     *
+     * @param string $error_message Raw Stripe message.
+     * @return string|null One of the diagnostic codes, or null when the message
+     *                     is not about an inaccessible object.
+     */
+    public static function classify_stripe_access_error( $error_message ) {
+        $needles = array(
+            'No such PaymentMethod',
+            'No such payment_method',
+            'No such payment_intent',
+            'No such PaymentIntent',
+            'No such customer',
+            'No such Customer',
+            'connected account',
+        );
+
+        $matched = false;
+        foreach ( $needles as $needle ) {
+            if ( stripos( $error_message, $needle ) !== false ) {
+                $matched = true;
+                break;
+            }
+        }
+
+        if ( ! $matched ) {
+            return null;
+        }
+
+        if ( ! class_exists( 'Securehold_Stripe_Context' ) && defined( 'SECUREHOLD_PLUGIN_DIR' ) ) {
+            require_once SECUREHOLD_PLUGIN_DIR . 'includes/stripe/class-securehold-wp-stripe-context.php';
+        }
+
+        if ( ! class_exists( 'Securehold_Stripe_Context' ) ) {
+            return 'stripe_context_mismatch_suspected';
+        }
+
+        $context = Securehold_Stripe_Context::get();
+        $status  = isset( $context['status'] ) ? $context['status'] : Securehold_Stripe_Context::STATUS_UNKNOWN;
+
+        switch ( $status ) {
+            case Securehold_Stripe_Context::STATUS_ACCOUNT_MISMATCH:
+            case Securehold_Stripe_Context::STATUS_CONTEXT_INCOMPATIBLE:
+            case Securehold_Stripe_Context::STATUS_MODE_MISMATCH:
+                // The diagnosis independently established the mismatch.
+                return 'stripe_context_mismatch_confirmed';
+
+            case Securehold_Stripe_Context::STATUS_COMPATIBLE:
+                // SecureHold demonstrably reads what WooCommerce wrote, so the
+                // account is not the problem: this single object is gone.
+                return 'stripe_object_not_accessible';
+
+            default:
+                return 'stripe_context_mismatch_suspected';
+        }
+    }
+
+    /**
+     * Classify a Stripe exception from what the SDK actually reports.
+     *
+     * The SDK carries structured fields — HTTP status, Stripe error code, the
+     * offending parameter, the request id — and reading them beats matching on
+     * message text. It also removes a real misdiagnosis: RateLimitException
+     * extends InvalidRequestException, so a catch on the latter silently absorbs
+     * rate limiting and reported it as whatever that branch happened to say.
+     *
+     * Returns only fields that are safe to log. getError() is deliberately not
+     * touched: it can carry whole PaymentIntent and PaymentMethod objects, and
+     * getHttpBody() can carry the raw request payload.
+     *
+     * @since 3.4.4
+     *
+     * @param Exception $e Exception thrown by the Stripe SDK.
+     * @return array {
+     *     @type string $code     Diagnostic code.
+     *     @type string $severity Log severity.
+     *     @type array  $detail   Safe structured context.
+     * }
+     */
+    public static function classify_stripe_exception( $e ) {
+        $detail = array();
+
+        if ( method_exists( $e, 'getHttpStatus' ) ) {
+            $detail['http_status'] = $e->getHttpStatus();
+        }
+        if ( method_exists( $e, 'getStripeCode' ) ) {
+            $detail['stripe_code'] = $e->getStripeCode();
+        }
+        if ( method_exists( $e, 'getStripeParam' ) ) {
+            $detail['stripe_param'] = $e->getStripeParam();
+        }
+        if ( method_exists( $e, 'getRequestId' ) ) {
+            $detail['request_id'] = $e->getRequestId();
+        }
+
+        $message     = $e->getMessage();
+        $stripe_code = isset( $detail['stripe_code'] ) ? (string) $detail['stripe_code'] : '';
+        $param       = isset( $detail['stripe_param'] ) ? (string) $detail['stripe_param'] : '';
+
+        // Order matters: the narrower subclasses are tested before their parents.
+        if ( $e instanceof \Stripe\Exception\AuthenticationException ) {
+            return array( 'code' => 'stripe_credentials_rejected', 'severity' => 'error', 'detail' => $detail );
+        }
+
+        if ( $e instanceof \Stripe\Exception\PermissionException ) {
+            return array( 'code' => 'stripe_permission_denied', 'severity' => 'warning', 'detail' => $detail );
+        }
+
+        if ( $e instanceof \Stripe\Exception\ApiConnectionException
+            || $e instanceof \Stripe\Exception\RateLimitException ) {
+            return array( 'code' => 'stripe_api_unreachable', 'severity' => 'warning', 'detail' => $detail );
+        }
+
+        // The object cannot be resolved with these credentials. Qualified against
+        // the context diagnosis rather than assumed to be a wrong account.
+        if ( $stripe_code === 'resource_missing' || self::classify_stripe_access_error( $message ) !== null ) {
+            $access = self::classify_stripe_access_error( $message );
+
+            if ( $access === null ) {
+                // resource_missing without a recognisable phrase: still an
+                // inaccessible object, still not proof of anything more.
+                $access = 'stripe_object_not_accessible';
+            }
+
+            return array(
+                'code'     => $access,
+                'severity' => ( $access === 'stripe_context_mismatch_confirmed' ) ? 'error' : 'warning',
+                'detail'   => $detail,
+            );
+        }
+
+        // Only Stripe saying so earns the wording about the PaymentIntent state.
+        if ( $stripe_code === 'payment_intent_unexpected_state' ) {
+            return array( 'code' => 'stripe_state_conflict', 'severity' => 'warning', 'detail' => $detail );
+        }
+
+        if ( $param === 'setup_future_usage' ) {
+            return array( 'code' => 'stripe_sfu_update_refused', 'severity' => 'warning', 'detail' => $detail );
+        }
+
+        if ( $param !== '' || $stripe_code === 'payment_intent_invalid_parameter' ) {
+            return array( 'code' => 'stripe_parameter_rejected', 'severity' => 'warning', 'detail' => $detail );
+        }
+
+        return array( 'code' => 'stripe_unknown_error', 'severity' => 'warning', 'detail' => $detail );
+    }
+
+    /**
+     * Retrieve a usable PaymentMethod token from an Order.
+     *
+     * Returns only references that can actually be used for an off-session hold.
+     * A legacy src_ or card_ resolves to '' so the caller falls through to the
+     * checkout PaymentIntent instead of sending an identifier to an endpoint
+     * that cannot resolve it.
+     *
+     * @since 3.4.4 Delegates to resolve_order_payment_reference().
+     *
+     * @param WC_Order $order Order to inspect.
+     * @return string A pm_ identifier, or ''.
      */
     public static function get_payment_method_token_from_order($order) {
-        // Modern: pm_ prefixed payment method (WC Stripe v5+)
-        $token = $order->get_meta('_stripe_payment_method', true);
-        if (!empty($token) && strpos($token, 'pm_') === 0) return $token;
+        $reference = self::resolve_order_payment_reference( $order );
 
-        // Legacy: source ID (src_ or card_)
-        $token = $order->get_meta('_stripe_source_id', true);
-        if (!empty($token)) return $token;
-
-        // Legacy: card ID
-        $token = $order->get_meta('_stripe_card_id', true);
-        if (!empty($token)) return $token;
-
-        return '';
+        return $reference['usable'] ? $reference['value'] : '';
     }
 
     /**
@@ -807,13 +1066,27 @@ class SecureHold_Stripe {
 
         // ── Step 1: Try order meta directly ──
         $customer_id = $order->get_meta('_stripe_customer_id', true);
-        $payment_method_id = self::get_payment_method_token_from_order($order);
+        $reference   = self::resolve_order_payment_reference( $order );
+        $payment_method_id = $reference['usable'] ? $reference['value'] : '';
+
+        // A stored reference that cannot be used is worth recording: it explains
+        // why the PaymentIntent fallback below is doing the work, and it is the
+        // signal that distinguishes a legacy order from a credentials problem.
+        if ( ! $reference['usable'] && $reference['value'] !== '' && function_exists( 'securehold_log' ) ) {
+            securehold_log( 'Stored payment reference is not usable for an off-session hold', array(
+                'order_id'    => method_exists( $order, 'get_id' ) ? $order->get_id() : 0,
+                'source_meta' => $reference['source_meta'],
+                'object_type' => $reference['object_type'],
+                'reason'      => $reference['reason'],
+            ), 'warning' );
+        }
 
         if (!empty($customer_id) && !empty($payment_method_id)) {
             return array(
                 'customer_id' => $customer_id,
                 'payment_method_id' => $payment_method_id,
                 'source' => 'order_meta',
+                'reference' => $reference,
             );
         }
 

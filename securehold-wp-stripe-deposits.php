@@ -3,18 +3,18 @@
  * Plugin Name:       SecureHold Security Deposit Holds with Stripe for WooCommerce
  * Plugin URI:        https://secureholdwp.com
  * Description:       Automatically create Stripe pre-authorizations (security deposits) for WooCommerce bookings without charging customers. Perfect for vacation rentals, equipment rentals, and service bookings.
- * Version:           3.4.3
+ * Version:           3.4.10
  * Author:            SecureHold WP
  * License:           GPL-2.0+
  * License URI:       http://www.gnu.org/licenses/gpl-2.0.txt
  * Text Domain:       securehold-security-deposit-holds
  * Domain Path:       /languages
  * Requires at least: 6.0
- * Tested up to:      7.0
+ * Tested up to:      7.1
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
  * WC requires at least: 5.0
- * WC tested up to:   9.8
+ * WC tested up to:   11.1
  */
 
 if (!defined('ABSPATH')) {
@@ -32,7 +32,13 @@ add_action( 'before_woocommerce_init', function() {
 } );
 
 // Plugin version
-define('SECUREHOLD_VERSION', '3.4.3');
+define('SECUREHOLD_VERSION', '3.4.10');
+
+/**
+ * Opt-in usage telemetry endpoint. Never contacted unless an administrator
+ * has explicitly turned tracking on — see class-securehold-wp-telemetry.php.
+ */
+define( 'SECUREHOLD_TELEMETRY_API_URL', 'https://secureholdwp.com/wp-json/securehold/v1/telemetry' );
 
 // Plugin paths
 define('SECUREHOLD_PLUGIN_DIR', plugin_dir_path(__FILE__));
@@ -94,8 +100,10 @@ register_activation_hook(__FILE__, 'securehold_activate');
  */
 function securehold_deactivate() {
     wp_clear_scheduled_hook( 'securehold_auto_release_cron' );
+    wp_clear_scheduled_hook( 'securehold_maintenance_cron' );
     wp_clear_scheduled_hook( 'securehold_trigger_scheduled_hold' );
     wp_clear_scheduled_hook( 'securehold_license_check' ); // PRO-owned; safe to clear here
+    wp_clear_scheduled_hook( 'securehold_telemetry_heartbeat' );
 }
 register_deactivation_hook( __FILE__, 'securehold_deactivate' );
 
@@ -186,6 +194,45 @@ function securehold_run() {
 add_action('plugins_loaded', 'securehold_run');
 
 /**
+ * Bring the database schema up to date.
+ *
+ * Deliberately on admin_init and not on activation alone: activation runs only
+ * when someone toggles the plugin, so a site updated through WordPress would
+ * otherwise keep its old schema indefinitely. The check costs one option read
+ * once the schema is current, and never runs on the front end, so no shopper
+ * ever waits on it.
+ *
+ * @since 3.4.4
+ */
+add_action( 'admin_init', function() {
+    require_once SECUREHOLD_PLUGIN_DIR . 'includes/database/class-securehold-wp-migrator.php';
+    Securehold_DB_Migrator::maybe_migrate();
+}, 5 );
+
+/**
+ * Daily log maintenance.
+ *
+ * The callback is attached on every request so WP-Cron can fire it; the
+ * schedule is topped up from the admin only, the same safety net the
+ * auto-release cron uses. Nothing is purged during a page load — the hook does
+ * the work, on its own schedule.
+ *
+ * @since 3.4.4
+ */
+require_once SECUREHOLD_PLUGIN_DIR . 'includes/cron/class-securehold-wp-log-retention.php';
+Securehold_Log_Retention::register();
+
+add_action( 'admin_init', function() {
+    Securehold_Log_Retention::schedule();
+}, 6 );
+
+add_action( 'admin_notices', function() {
+    if ( class_exists( 'Securehold_DB_Migrator' ) ) {
+        Securehold_DB_Migrator::maybe_show_failure_notice();
+    }
+} );
+
+/**
  * One-time migration: copy legacy SecureHold email options into WooCommerce email settings.
  * Runs once on admin_init and sets a flag so it never repeats.
  * @since 5.0.0
@@ -223,69 +270,24 @@ add_action( 'admin_init', function() {
 }, 25 );
 
 /**
- * One-time migration: detect divergence between SecureHold Stripe credentials and
- * WooCommerce Stripe gateway settings that may have been written by a previous version
- * of the Setup Wizard. Sets an admin notice flag if divergence is found so the merchant
- * can review their WooCommerce payment gateway settings independently.
+ * The one-shot WooCommerce/SecureHold credential divergence notice was removed in
+ * 3.4.4.
  *
- * Does NOT modify woocommerce_stripe_settings — only reads it.
+ * It compared the two secret keys as plain strings, ran exactly once behind a
+ * permanent flag, and dismissed itself on first display — so it could not report
+ * a divergence introduced afterwards, which is when divergence actually happens.
+ * It also had nothing to say when the WooCommerce gateway is connected through
+ * OAuth and stores no key locally.
  *
- * @since 3.5.0
+ * Securehold_Stripe_Context replaces it: continuously evaluated, account-aware,
+ * and able to tell an unreadable object from a genuinely different account. It is
+ * the single source of truth for Stripe context, surfaced in the Health Check,
+ * the Setup Wizard and the support bundle.
+ *
+ * securehold_migration_wc_stripe_notice_v1 and securehold_wc_stripe_divergence_notice
+ * are no longer written. Both stay in uninstall.php so existing installs are
+ * still cleaned up; neither warrants a migration of its own.
  */
-add_action( 'admin_init', function() {
-    if ( get_option( 'securehold_migration_wc_stripe_notice_v1' ) ) {
-        return;
-    }
-
-    $wc_settings = get_option( 'woocommerce_stripe_settings' );
-
-    if ( ! empty( $wc_settings ) && is_array( $wc_settings ) ) {
-        $sh_mode           = get_option( 'securehold_stripe_mode', 'test' );
-        $wc_test_mode      = ( ! empty( $wc_settings['testmode'] ) && $wc_settings['testmode'] === 'yes' );
-        $modes_differ      = ( ( $sh_mode === 'test' ) !== $wc_test_mode );
-
-        $sh_secret  = $sh_mode === 'live'
-            ? get_option( 'securehold_stripe_live_secret_key', '' )
-            : get_option( 'securehold_stripe_test_secret_key', '' );
-        $wc_secret  = $wc_test_mode
-            ? ( $wc_settings['test_secret_key'] ?? '' )
-            : ( $wc_settings['secret_key'] ?? '' );
-
-        if ( $modes_differ || ( ! empty( $wc_secret ) && $wc_secret !== $sh_secret ) ) {
-            update_option( 'securehold_wc_stripe_divergence_notice', true );
-        }
-    }
-
-    update_option( 'securehold_migration_wc_stripe_notice_v1', true );
-}, 30 );
-
-/**
- * Display a one-time admin notice when SecureHold Stripe credentials diverge from
- * the WooCommerce Stripe gateway settings (set by securehold_migration_wc_stripe_notice_v1).
- * Only shown to Administrators; dismissed permanently on display.
- *
- * @since 3.5.0
- */
-add_action( 'admin_notices', function() {
-    if ( ! current_user_can( 'manage_options' ) ) {
-        return;
-    }
-    if ( ! get_option( 'securehold_wc_stripe_divergence_notice' ) ) {
-        return;
-    }
-    delete_option( 'securehold_wc_stripe_divergence_notice' );
-    $settings_url = admin_url( 'admin.php?page=securehold-settings' );
-    $wc_url       = admin_url( 'admin.php?page=wc-settings&tab=checkout&section=stripe' );
-    printf(
-        '<div class="notice notice-warning is-dismissible"><p><strong>SecureHold WP:</strong> %s <a href="%s">%s</a> %s <a href="%s">%s</a>.</p></div>',
-        esc_html__( 'Your SecureHold Stripe credentials may differ from your WooCommerce Stripe gateway settings. As of v3.5.0, SecureHold manages its credentials independently.', 'securehold-security-deposit-holds' ),
-        esc_url( $settings_url ),
-        esc_html__( 'Review SecureHold settings', 'securehold-security-deposit-holds' ),
-        esc_html__( 'and', 'securehold-security-deposit-holds' ),
-        esc_url( $wc_url ),
-        esc_html__( 'WooCommerce Stripe gateway', 'securehold-security-deposit-holds' )
-    );
-} );
 
 /**
  * Add settings link on plugin page

@@ -20,7 +20,6 @@
  *       woocommerce_payment_complete, woocommerce_order_status_processing,
  *       woocommerce_order_status_completed, woocommerce_order_status_changed
  *   - WooCommerce integration   (class-securehold-wp-woo.php)
- *   - Order class triggers      (class-securehold-wp-order.php)
  *   - Diagnostics retry tool    (class-securehold-wp-diagnostics-service.php)
  *
  * @since 5.5.0

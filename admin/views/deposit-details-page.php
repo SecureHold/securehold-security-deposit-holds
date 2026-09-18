@@ -677,12 +677,36 @@ $_sh_rule_engine_pro = securehold_feature_enabled( 'rule_engine' );
                 </div>
             <?php endif; ?>
 
-            <?php if ( $dd_failure_reason === 'account_mismatch' ) : ?>
+            <?php
+            // 'account_mismatch' is the pre-3.4.4 code, kept so holds that failed
+            // before the upgrade still explain themselves.
+            $dd_mismatch_confirmed = in_array( $dd_failure_reason, array( 'stripe_context_mismatch_confirmed', 'account_mismatch' ), true );
+            $dd_object_unreachable = in_array( $dd_failure_reason, array( 'stripe_context_mismatch_suspected', 'stripe_object_not_accessible' ), true );
+            $dd_legacy_reference   = in_array( $dd_failure_reason, array( 'legacy_payment_method', 'invalid_payment_reference' ), true );
+            ?>
+
+            <?php if ( $dd_mismatch_confirmed ) : ?>
                 <div style="background:#f8d7da; border-left:4px solid #dc3545; padding:12px 16px; margin-bottom:1rem; border-radius:6px; font-size:13px; line-height:1.6;">
-                    <strong style="color:#721c24;">&#10060; <?php esc_html_e( 'Hold Creation Failed — Stripe Account or Mode Mismatch', 'securehold-security-deposit-holds' ); ?></strong><br>
-                    <?php esc_html_e( 'Hold creation failed because the payment appears to belong to a different Stripe account or environment than the one currently configured in SecureHold WP.', 'securehold-security-deposit-holds' ); ?>
-                    <br><?php esc_html_e( 'Please verify that WooCommerce Stripe and SecureHold WP use the same Stripe account and the same mode (test/live).', 'securehold-security-deposit-holds' ); ?>
+                    <strong style="color:#721c24;">&#10060; <?php esc_html_e( 'Hold Creation Failed — Incompatible Stripe Contexts', 'securehold-security-deposit-holds' ); ?></strong><br>
+                    <?php esc_html_e( 'SecureHold WP and the WooCommerce Stripe Gateway are using incompatible Stripe contexts. The payment does not exist in the Stripe account or environment SecureHold WP is configured with.', 'securehold-security-deposit-holds' ); ?>
+                    <br><?php esc_html_e( 'Open the Stripe environment where this payment appears, and copy its API keys into SecureHold WP.', 'securehold-security-deposit-holds' ); ?>
                     <br><small style="color:#721c24;"><?php esc_html_e( 'The raw Stripe error is available in the order notes and in the Technical Logs below.', 'securehold-security-deposit-holds' ); ?></small>
+                </div>
+            <?php endif; ?>
+
+            <?php if ( $dd_object_unreachable ) : ?>
+                <div style="background:#fff4e5; border-left:4px solid #f59e0b; padding:12px 16px; margin-bottom:1rem; border-radius:6px; font-size:13px; line-height:1.6;">
+                    <strong style="color:#92400e;">&#9888; <?php esc_html_e( 'Hold Creation Failed — Stripe Object Not Accessible', 'securehold-security-deposit-holds' ); ?></strong><br>
+                    <?php esc_html_e( 'This Stripe object could not be accessed with the current SecureHold WP credentials. The object may belong to another Stripe environment, or the stored payment reference may no longer be valid.', 'securehold-security-deposit-holds' ); ?>
+                    <br><?php esc_html_e( 'This has not been confirmed as an account mismatch. Run the Stripe context check in SecureHold WP > Health Check for a verdict.', 'securehold-security-deposit-holds' ); ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ( $dd_legacy_reference ) : ?>
+                <div style="background:#fff4e5; border-left:4px solid #f59e0b; padding:12px 16px; margin-bottom:1rem; border-radius:6px; font-size:13px; line-height:1.6;">
+                    <strong style="color:#92400e;">&#9888; <?php esc_html_e( 'Hold Creation Failed — Legacy Payment Reference', 'securehold-security-deposit-holds' ); ?></strong><br>
+                    <?php esc_html_e( 'The payment reference stored on this order is not a reusable Stripe payment method. Orders taken through older versions of the WooCommerce Stripe Gateway can carry a legacy source or card reference, which cannot be used for an off-session security deposit.', 'securehold-security-deposit-holds' ); ?>
+                    <br><?php esc_html_e( 'This does not indicate a problem with your Stripe configuration.', 'securehold-security-deposit-holds' ); ?>
                 </div>
             <?php endif; ?>
 

@@ -954,8 +954,8 @@ class Securehold_Admin {
                     
                     <form method="post" style="margin:0;">
                         <?php wp_nonce_field('securehold_metabox_action', 'securehold_metabox_nonce'); ?>
-                        <button type="submit" class="button button-primary" name="securehold_create_now" value="1" style="width:100%; text-align:center; font-size:14px; padding:8px 12px; height:auto;">
-                            <span class="dashicons dashicons-shield" style="vertical-align:middle; margin-right:5px;"></span>
+                        <button type="submit" class="button button-primary" name="securehold_create_now" value="1" style="width:100%; display:inline-flex; align-items:center; justify-content:center; gap:6px; text-align:center; font-size:14px; padding:8px 12px; height:auto;">
+                            <span class="dashicons dashicons-shield" style="display:block; flex:0 0 20px; width:20px; height:20px; line-height:20px;"></span>
                             <?php echo ($deposit && $deposit->status === 'failed')
                                 ? esc_html__('Retry Create Hold', 'securehold-security-deposit-holds')
                                 : esc_html__('Create Hold Now', 'securehold-security-deposit-holds'); ?>
@@ -1144,6 +1144,25 @@ class Securehold_Admin {
         
         // Handle "Create Hold Now" button
         if (isset($_POST['securehold_create_now']) && $_POST['securehold_create_now'] === '1') {
+
+            // ── One submission, one interpretation ──
+            // This handler is registered on both save_post_shop_order and
+            // woocommerce_process_shop_order_meta, and on legacy (non-HPOS)
+            // orders WordPress fires both within a single save request. The
+            // scheduler already refuses the duplicate creation, but it reports
+            // that refusal as "nothing to do" (true) — which this handler would
+            // read as success and use to overwrite the genuine error notice with
+            // "Security deposit created successfully". Stopping here keeps the
+            // first run's outcome, its deposit row, its order note and its
+            // admin notice intact.
+            static $handled = array();
+            $order_id = (int) $order_id;
+
+            if ( isset( $handled[ $order_id ] ) ) {
+                return;
+            }
+            $handled[ $order_id ] = true;
+
             $order = wc_get_order($order_id);
             if (!$order) return;
             
@@ -1279,6 +1298,13 @@ class Securehold_Admin {
         $deposit_id = isset($_POST['deposit_id']) ? intval($_POST['deposit_id']) : 0;
         $amount_capture_float = isset($_POST['amount']) ? floatval($_POST['amount']) : 0;
 
+        // The status check below reads, then Stripe is called, then the row is
+        // written. Two simultaneous requests both cleared that check on staging
+        // and both reached Stripe; only Stripe's own refusal stopped a second
+        // charge. The same atomic lock the creation path uses closes that
+        // window here, before any money can move.
+        $terminal_token = null;
+
         if ($deposit_id <= 0 || $amount_capture_float <= 0) {
             wp_send_json_error(['message' => __('Invalid data provided.', 'securehold-security-deposit-holds')]);
         }
@@ -1295,8 +1321,35 @@ class Securehold_Admin {
         }
         
         if (empty($deposit->intent_id)) {
-            securehold_log('Manual Capture Failed: Missing Intent ID', ['deposit_id' => $deposit_id]);
+            securehold_log('Manual Capture Failed: Missing Intent ID', ['deposit_id' => $deposit_id], 'error');
             wp_send_json_error(['message' => __('Error: No Stripe PaymentIntent ID found for this deposit.', 'securehold-security-deposit-holds')]);
+        }
+
+        if ( class_exists( 'Securehold_Scheduler' ) ) {
+            $terminal_token = Securehold_Scheduler::acquire_terminal_lock( $deposit->order_id );
+
+            if ( $terminal_token === false ) {
+                // A collision, not a failure: another request is mid-flight on
+                // this same deposit. Debug, because nothing is broken.
+                securehold_log( 'Terminal operation already in progress', array(
+                    'deposit_id' => $deposit_id,
+                    'operation'  => 'capture',
+                ), 'debug' );
+                wp_send_json_error( array( 'message' => __( 'Another capture or release is already running for this deposit.', 'securehold-security-deposit-holds' ) ) );
+            }
+
+            // wp_send_json_* ends the request, so there is no point at which a
+            // finally block would run. Shutdown is the only hook that fires on
+            // every exit path, and without it a refused capture would hold the
+            // lock for its full TTL and block the merchant's next attempt.
+            $sh_order_id = $deposit->order_id;
+            register_shutdown_function( function () use ( $sh_order_id, $terminal_token ) {
+                Securehold_Scheduler::release_terminal_lock( $sh_order_id, $terminal_token );
+            } );
+
+            // Re-read now that we hold the lock: the request that just finished
+            // may have captured this deposit a moment ago.
+            $deposit = SecureHold_DB::get_deposit( $deposit->order_id ) ?: $deposit;
         }
 
         // ── Server-side guard: block any second capture ──
@@ -1328,16 +1381,36 @@ class Securehold_Admin {
         $result = SecureHold_Stripe::capture_payment_intent($deposit->intent_id, $amount_cents);
 
         if (is_wp_error($result)) {
-            securehold_log('Manual Capture Failed', ['order_id' => $deposit->order_id, 'error' => $result->get_error_message()]);
+            // A refusal from Stripe is a real failure, not a note in passing.
+            securehold_log('Manual Capture Failed', ['order_id' => $deposit->order_id, 'error' => $result->get_error_message()], 'error');
             wp_send_json_error(['message' => $result->get_error_message()]);
         }
 
         $final_captured_cents = $result->amount_received;
         $final_captured_float = $final_captured_cents / 100;
 
-        $wpdb->update($table_name, array('status' => 'captured', 'captured_amount' => $final_captured_float, 'captured_at' => current_time('mysql')), array('id' => $deposit_id), array('%s', '%f', '%s'), array('%d'));
+                // One place decides the state, writes the table and mirrors the order
+        // meta. The meta used to be left behind entirely here, which is why a
+        // captured deposit still read as authorized on the order screen.
+        // No occurred_at here on purpose. The captured PaymentIntent carries no
+        // capture timestamp: ->created is when the intent was opened, which for a
+        // deposit is the authorization, days earlier. Passing it wrote a
+        // captured_at that predated the capture by the whole hold period. The
+        // capture moment does exist on Stripe, on the charge's balance
+        // transaction, but reading it costs another API call for a value the
+        // local clock already approximates within a second. So transition()
+        // falls back to current_time( 'mysql' ), taken just after Stripe
+        // confirmed: slightly less precise than Stripe's own moment, and
+        // actually the moment the money moved.
+        $sh_state = Securehold_Hold_State::transition( $deposit, 'captured', array(
+            'captured_amount' => $final_captured_float,
+            'source'          => 'admin',
+        ) );
 
-        $order = wc_get_order($deposit->order_id);
+        // Side effects belong to the caller, and only when the state actually
+        // moved. A transition that was already applied elsewhere must not add a
+        // second note or send the customer a second email.
+        $order = $sh_state['applied'] ? wc_get_order($deposit->order_id) : false;
         if ($order) {
             $formatted_amount = wc_price($amount_capture_float, array('currency' => $deposit->currency));
             $note = sprintf(
@@ -1351,7 +1424,7 @@ class Securehold_Admin {
 
         // Fire captured email notifications via centralized manager.
         $this->ensure_email_manager_loaded();
-        if ( class_exists( 'Securehold_Email_Manager' ) ) {
+        if ( $sh_state['applied'] && class_exists( 'Securehold_Email_Manager' ) ) {
             $capture_payload = (object) array(
                 'amount'          => floatval( $deposit->amount ),
                 'captured_amount' => $final_captured_float,
@@ -1403,6 +1476,36 @@ class Securehold_Admin {
             wp_send_json_error(['message' => __('No Stripe PaymentIntent ID found for this deposit.', 'securehold-security-deposit-holds')]);
         }
 
+        // Same lock as capture, deliberately: a capture and a release fired at
+        // the same moment on one deposit must contend, not both reach Stripe.
+        $terminal_token = null;
+        if ( class_exists( 'Securehold_Scheduler' ) ) {
+            $terminal_token = Securehold_Scheduler::acquire_terminal_lock( $deposit->order_id );
+
+            if ( $terminal_token === false ) {
+                securehold_log( 'Terminal operation already in progress', array(
+                    'deposit_id' => $deposit_id,
+                    'operation'  => 'release',
+                ), 'debug' );
+                wp_send_json_error( array( 'message' => __( 'Another capture or release is already running for this deposit.', 'securehold-security-deposit-holds' ) ) );
+            }
+
+            $sh_order_id = $deposit->order_id;
+            register_shutdown_function( function () use ( $sh_order_id, $terminal_token ) {
+                Securehold_Scheduler::release_terminal_lock( $sh_order_id, $terminal_token );
+            } );
+
+            $deposit = SecureHold_DB::get_deposit( $deposit->order_id ) ?: $deposit;
+
+            if ( in_array( $deposit->status, array( 'captured', 'released' ), true ) ) {
+                securehold_log( 'Skipped (already ' . $deposit->status . ')', array(
+                    'deposit_id' => $deposit_id,
+                    'operation'  => 'release',
+                ), 'debug' );
+                wp_send_json_error( array( 'message' => __( 'This deposit is no longer authorized.', 'securehold-security-deposit-holds' ) ) );
+            }
+        }
+
         // Cancel on Stripe
         $result = SecureHold_Stripe::cancel_payment_intent($deposit->intent_id);
 
@@ -1411,30 +1514,33 @@ class Securehold_Admin {
 
             // If already canceled on Stripe, update our DB anyway
             if ($error_code === 'already_canceled') {
-                $wpdb->update($table_name, array(
-                    'status' => 'released',
-                    'released_at' => current_time('mysql'),
-                    'notes' => __('Released (was already canceled on Stripe).', 'securehold-security-deposit-holds')
-                ), array('id' => $deposit_id));
+                $sh_state = Securehold_Hold_State::transition( $deposit, 'released', array(
+                    // Stripe's cancellation moment when it gives one, so a
+                    // delayed round trip cannot become the business time.
+                    'occurred_at' => isset( $result->canceled_at ) ? (int) $result->canceled_at : null,
+                    'source'      => 'admin',
+                ) );
 
                 wp_send_json_success(['message' => __('Hold released (was already canceled on Stripe).', 'securehold-security-deposit-holds')]);
                 return;
             }
 
-            securehold_log('Manual Release Failed', ['deposit_id' => $deposit_id, 'error' => $result->get_error_message()]);
+            securehold_log('Manual Release Failed', ['deposit_id' => $deposit_id, 'error' => $result->get_error_message()], 'error');
             wp_send_json_error(['message' => $result->get_error_message()]);
             return;
         }
 
         // Update DB
-        $wpdb->update($table_name, array(
-            'status' => 'released',
-            'released_at' => current_time('mysql'),
-            'notes' => __('Manually released by admin.', 'securehold-security-deposit-holds')
-        ), array('id' => $deposit_id));
+        $sh_state = Securehold_Hold_State::transition( $deposit, 'released', array(
+                    // Stripe's cancellation moment when it gives one, so a
+                    // delayed round trip cannot become the business time.
+                    'occurred_at' => isset( $result->canceled_at ) ? (int) $result->canceled_at : null,
+                    'source'      => 'admin',
+                ) );
 
         // Order note
-        $order = wc_get_order($deposit->order_id);
+        // Only when this request is the one that moved the state.
+        $order = $sh_state['applied'] ? wc_get_order($deposit->order_id) : false;
         if ($order) {
             $formatted_amount = wc_price($deposit->amount, array('currency' => $deposit->currency));
             $order->add_order_note(sprintf(
@@ -1451,7 +1557,7 @@ class Securehold_Admin {
             'currency' => $deposit->currency,
         );
 
-        if ( class_exists( 'Securehold_Email_Manager' ) ) {
+        if ( $sh_state['applied'] && class_exists( 'Securehold_Email_Manager' ) ) {
             Securehold_Email_Manager::fire_email( 'securehold_deposit_released', $deposit->order_id, $release_payload );
             Securehold_Email_Manager::fire_email( 'securehold_admin_hold_released', $deposit->order_id, $release_payload );
         }
@@ -2174,6 +2280,19 @@ class Securehold_Admin {
             );
         }
 
+        // ── SecureHold's own admin pages: opt-in telemetry notice handler ──
+        // maybe_show_optin_notice() renders via the securehold_after_page_header
+        // hook, fired on every SecureHold screen — this loads alongside it.
+        if ( strpos( $hook, 'securehold' ) !== false ) {
+            wp_enqueue_script(
+                'securehold-admin-telemetry-notice',
+                SECUREHOLD_PLUGIN_URL . 'assets/js/admin-telemetry-notice.js',
+                array( 'jquery' ),
+                filemtime( SECUREHOLD_PLUGIN_DIR . 'assets/js/admin-telemetry-notice.js' ) ?: SECUREHOLD_VERSION,
+                true
+            );
+        }
+
         // Order edit screens (classic + HPOS) need admin.js: it's what actually
         // handles .sh-btn-capture / .sh-btn-release clicks (opens the capture modal,
         // fires the release AJAX call) for the metabox rendered by render_order_metabox().
@@ -2754,6 +2873,11 @@ class Securehold_Admin {
 
                 require_once SECUREHOLD_PLUGIN_DIR . 'includes/class-securehold-wp-webhook-configurator.php';
 
+                // Re-test means re-test: drop the cached verdict so the Health
+                // Check recomputes against Stripe on the redirect instead of
+                // replaying what it already knew.
+                Securehold_Webhook_Configurator::flush_status();
+
                 $configurator = new Securehold_Webhook_Configurator();
                 $result = $configurator->test_webhook();
 
@@ -2855,7 +2979,36 @@ class Securehold_Admin {
                 exit;
             }
         }
-        
+
+        // RE-TEST STRIPE CONTEXT (Health Check)
+        // Drops the cached verdict and lets the Health Check recompute on the
+        // redirect. Nothing is evaluated here, so the diagnosis and its display
+        // stay in one place.
+        if (
+            isset($_GET['action'], $_GET['_wpnonce']) &&
+            $_GET['action'] === 'securehold_test_stripe_context'
+        ) {
+            if (!current_user_can('manage_options')) {
+                wp_die(esc_html__('You do not have permission to run Stripe diagnostics.', 'securehold-security-deposit-holds'), 403);
+            }
+
+            $nonce = sanitize_text_field(wp_unslash($_GET['_wpnonce']));
+
+            if (wp_verify_nonce($nonce, 'securehold_test_stripe_context')) {
+
+                if (!class_exists('Securehold_Stripe_Context') && defined('SECUREHOLD_PLUGIN_DIR')) {
+                    require_once SECUREHOLD_PLUGIN_DIR . 'includes/stripe/class-securehold-wp-stripe-context.php';
+                }
+
+                if (class_exists('Securehold_Stripe_Context')) {
+                    Securehold_Stripe_Context::flush();
+                }
+
+                wp_safe_redirect(admin_url('admin.php?page=securehold-health'));
+                exit;
+            }
+        }
+
         // TEST CRON (Health Check)
         if (
             isset($_GET['action'], $_GET['_wpnonce']) &&
@@ -3097,12 +3250,33 @@ class Securehold_Admin {
                     );
 
                     // 3) Checkout configuration checks (guest-first approach)
-                    $add_detail(
-                        __('Stripe forced save source (transparent)', 'securehold-security-deposit-holds'),
-                        has_filter('wc_stripe_force_save_source', '__return_true') !== false,
-                        __('OK — Payment methods saved automatically', 'securehold-security-deposit-holds'),
-                        __('Missing filter: wc_stripe_force_save_source', 'securehold-security-deposit-holds')
-                    );
+                    // Layer 1 registration is ours, so has_filter() on our own
+                    // callback can only ever answer yes — it proved nothing about
+                    // whether the gateway still consumes those filters. Real
+                    // evidence is the injection layer recorded on orders that
+                    // actually went through checkout. No Stripe call is made:
+                    // this reads order meta only.
+                    $sfu_layers = self::observed_sfu_injection_layers();
+
+                    if ( empty( $sfu_layers ) ) {
+                        $add_detail(
+                            __('Checkout SFU injection', 'securehold-security-deposit-holds'),
+                            true,
+                            __('Layer 1 compatibility hooks registered — runtime usage not yet observed. This resolves after the first Stripe order.', 'securehold-security-deposit-holds'),
+                            ''
+                        );
+                    } else {
+                        $add_detail(
+                            __('Checkout SFU injection', 'securehold-security-deposit-holds'),
+                            true,
+                            sprintf(
+                                /* translators: %s = comma-separated injection layer names observed on recent orders */
+                                __('Observed on recent orders: %s', 'securehold-security-deposit-holds'),
+                                implode( ', ', $sfu_layers )
+                            ),
+                            ''
+                        );
+                    }
 
                     $add_detail(
                         __('Post-payment Stripe data resolution', 'securehold-security-deposit-holds'),
@@ -3402,144 +3576,18 @@ class Securehold_Admin {
             wp_die( esc_html__( 'You do not have permission to do this.', 'securehold-security-deposit-holds' ) );
         }
 
-        global $wpdb;
-
-        // ── Helper: mask a secret key ────────────────────────────────────────
-        $mask = function( $val ) {
-            if ( empty( $val ) ) {
-                return '[NOT SET]';
-            }
-            return '[SET - redacted]';
-        };
-
-        // ── 1. Environment ────────────────────────────────────────────────────
-        $hpos_enabled = false;
-        if ( class_exists( 'Automattic\WooCommerce\Utilities\OrderUtil' ) ) {
-            $hpos_enabled = Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+        if ( ! class_exists( 'Securehold_Support_Bundle' ) && defined( 'SECUREHOLD_PLUGIN_DIR' ) ) {
+            require_once SECUREHOLD_PLUGIN_DIR . 'includes/class-securehold-wp-support-bundle.php';
         }
 
-        $environment = array(
-            'generated_at'     => current_time( 'mysql' ),
-            'timezone'         => wp_timezone_string(),
-            'wordpress'        => get_bloginfo( 'version' ),
-            'woocommerce'      => defined( 'WC_VERSION' ) ? WC_VERSION : 'not detected',
-            'php'              => phpversion(),
-            'locale'           => get_locale(),
-            'multisite'        => is_multisite(),
-            'hpos_enabled'     => $hpos_enabled,
-            'wp_debug'         => defined( 'WP_DEBUG' ) && WP_DEBUG,
-            'cron_disabled'    => defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON,
-            'memory_limit'     => WP_MEMORY_LIMIT,
-            'max_exec_time'    => (int) ini_get( 'max_execution_time' ),
-        );
-
-        // ── 2. SecureHold ─────────────────────────────────────────────────────
-        $mode = get_option( 'securehold_stripe_mode', 'test' );
-
-        $securehold = array(
-            'version'             => defined( 'SECUREHOLD_VERSION' ) ? SECUREHOLD_VERSION : 'unknown',
-            'stripe_mode'         => $mode,
-            'debug_logging'       => (bool) get_option( 'securehold_enable_logging', false ),
-            'setup_completed'     => (bool) get_option( 'securehold_setup_completed', false ),
-            'webhook_url'         => home_url( '/wc-api/securehold_webhook/' ),
-            'webhook_endpoint_id' => get_option( 'securehold_webhook_endpoint_id', null ) ?: '(not set)',
-            'secret_key'          => $mask( get_option( $mode === 'live' ? 'securehold_stripe_live_secret_key' : 'securehold_stripe_test_secret_key', '' ) ),
-            'publishable_key'     => $mask( get_option( $mode === 'live' ? 'securehold_stripe_live_publishable_key' : 'securehold_stripe_test_publishable_key', '' ) ),
-            'webhook_secret'      => $mask( get_option( 'securehold_webhook_secret', '' ) ),
-        );
-
-        // ── 3. Non-sensitive settings ─────────────────────────────────────────
-        $settings = array(
-            'capture_timing'             => get_option( 'securehold_capture_timing', '(not set)' ),
-            'default_hold_amount'        => get_option( 'securehold_default_hold_amount', '(not set)' ),
-            'minimum_cart_amount'        => get_option( 'securehold_minimum_cart_amount', '(not set)' ),
-            'auto_release'               => get_option( 'securehold_auto_release', '(not set)' ),
-            'auto_release_days'          => get_option( 'securehold_auto_release_days', '(not set)' ),
-            'checkout_message_enabled'   => (bool) get_option( 'securehold_checkout_message_enabled', false ),
-            'my_deposits_enabled'        => (bool) get_option( 'securehold_my_deposits_enabled', true ),
-            'customer_notifications'     => (bool) get_option( 'securehold_customer_notifications', true ),
-            'admin_notifications'        => (bool) get_option( 'securehold_admin_notifications', true ),
-            'resolution_policy'          => get_option( 'securehold_resolution_policy', '(not set)' ),
-            'aggregation_mode'           => get_option( 'securehold_aggregation_mode', '(not set)' ),
-        );
-
-        // ── 4. Database health ────────────────────────────────────────────────
-        $holds_table = $wpdb->prefix . 'securehold_holds';
-        $logs_table  = $wpdb->prefix . 'securehold_logs';
-
-        $holds_table_exists = $wpdb->get_var( "SHOW TABLES LIKE '{$holds_table}'" ) === $holds_table;
-        $logs_table_exists  = $wpdb->get_var( "SHOW TABLES LIKE '{$logs_table}'" ) === $logs_table;
-
-        $holds_by_status = array();
-        $total_logs      = 0;
-        $recent_logs_count = 0;
-
-        if ( $holds_table_exists ) {
-            $rows = $wpdb->get_results( "SELECT status, COUNT(*) as cnt FROM `{$holds_table}` GROUP BY status" );
-            foreach ( $rows as $row ) {
-                $holds_by_status[ $row->status ] = (int) $row->cnt;
-            }
+        if ( ! class_exists( 'Securehold_Support_Bundle' ) ) {
+            wp_die( esc_html__( 'The support bundle builder is unavailable.', 'securehold-security-deposit-holds' ) );
         }
 
-        if ( $logs_table_exists ) {
-            $total_logs = (int) $wpdb->get_var( "SELECT COUNT(*) FROM `{$logs_table}`" );
-            $recent_logs_count = (int) $wpdb->get_var(
-                "SELECT COUNT(*) FROM `{$logs_table}` WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            );
-        }
-
-        $database = array(
-            'holds_table_exists' => $holds_table_exists,
-            'logs_table_exists'  => $logs_table_exists,
-            'holds_by_status'    => $holds_by_status,
-            'total_holds'        => array_sum( $holds_by_status ),
-            'total_logs'         => $total_logs,
-            'recent_logs_7d'     => $recent_logs_count,
-        );
-
-        // ── 5. Recent logs (last 50, sanitized) ───────────────────────────────
-        $recent_logs = array();
-
-        if ( $logs_table_exists ) {
-            $log_rows = $wpdb->get_results( $wpdb->prepare(
-                "SELECT created_at, severity, event_type, message, order_id, hold_id, data
-                 FROM `{$logs_table}` ORDER BY id DESC LIMIT %d",
-                50
-            ) );
-
-            foreach ( $log_rows as $row ) {
-                $entry = array(
-                    'created_at' => $row->created_at,
-                    'severity'   => $row->severity,
-                    'event'      => $row->event_type,
-                    'message'    => $row->message,
-                );
-                if ( ! empty( $row->order_id ) ) {
-                    $entry['order_id'] = (int) $row->order_id;
-                }
-                if ( ! empty( $row->hold_id ) ) {
-                    $entry['hold_id'] = (int) $row->hold_id;
-                }
-                // Partial anonymization of any email in log data
-                if ( ! empty( $row->data ) ) {
-                    $sanitized_data = preg_replace( '/([a-zA-Z0-9._%+-]{2})[a-zA-Z0-9._%+-]*@/', '$1***@', $row->data );
-                    $entry['data'] = $sanitized_data;
-                }
-                $recent_logs[] = $entry;
-            }
-        }
-
-        // ── Assemble bundle ───────────────────────────────────────────────────
-        $bundle = array(
-            'bundle_version' => '1.0',
-            'generated_at'   => current_time( 'mysql' ),
-            'timezone'       => wp_timezone_string(),
-            'environment'    => $environment,
-            'securehold'     => $securehold,
-            'settings'       => $settings,
-            'database'       => $database,
-            'recent_logs'    => $recent_logs,
-        );
+        // Assembly, allowlisting and redaction all live in the builder, so what
+        // support receives cannot drift from what the builder promises.
+        $builder = new Securehold_Support_Bundle();
+        $bundle  = $builder->build();
 
         $json     = wp_json_encode( $bundle, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
         $filename = 'securehold-support-bundle-' . gmdate( 'Ymd-His' ) . '.json';
@@ -3553,7 +3601,6 @@ class Securehold_Admin {
         echo $json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         exit;
     }
-
     public function handle_reset_wizard() {
 
         if (!current_user_can('manage_options')) {
@@ -3595,6 +3642,58 @@ class Securehold_Admin {
         // Redirect to wizard step 1
         wp_safe_redirect(admin_url('admin.php?page=securehold-setup-wizard&step=1'));
         exit;
+    }
+
+
+    /**
+     * Injection layers actually recorded on recent orders.
+     *
+     * Layer 1 registration cannot be verified by asking WordPress whether our own
+     * filters are attached — they always are. What can be verified is which layer
+     * ended up doing the work, which Securehold_Checkout records on every order
+     * as _securehold_sfu_injection_layer.
+     *
+     * Reads order meta through the WooCommerce CRUD, so it serves HPOS and post
+     * storage alike, and issues no Stripe call: this runs on a Health Check page
+     * the merchant may refresh freely.
+     *
+     * @since 3.4.4
+     * @return string[] Distinct layer names, empty when no order has been processed yet.
+     */
+    private static function observed_sfu_injection_layers() {
+        if ( ! function_exists( 'wc_get_orders' ) ) {
+            return array();
+        }
+
+        $order_ids = wc_get_orders( array(
+            'limit'   => 20,
+            'orderby' => 'date',
+            'order'   => 'DESC',
+            'return'  => 'ids',
+            'status'  => array( 'wc-processing', 'wc-completed', 'wc-on-hold', 'wc-refunded' ),
+        ) );
+
+        if ( empty( $order_ids ) || ! is_array( $order_ids ) ) {
+            return array();
+        }
+
+        $layers = array();
+
+        foreach ( $order_ids as $order_id ) {
+            $order = wc_get_order( $order_id );
+
+            if ( ! $order ) {
+                continue;
+            }
+
+            $layer = (string) $order->get_meta( '_securehold_sfu_injection_layer', true );
+
+            if ( $layer !== '' ) {
+                $layers[ $layer ] = true;
+            }
+        }
+
+        return array_keys( $layers );
     }
 
 }

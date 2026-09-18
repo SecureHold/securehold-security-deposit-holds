@@ -86,7 +86,7 @@ SecureHold WP could not identify a reusable payment method on the order.
 
 What to check:
 - Open the WooCommerce order and look for `_stripe_payment_method` or `_stripe_payment_method_id` in the order meta.
-- If empty, Stripe did not save the payment method. This is related to the single-use payment method issue. See [SINGLE-USE-PAYMENT-METHOD.md](SINGLE-USE-PAYMENT-METHOD.md).
+- If empty, Stripe did not save the payment method. This is related to the single-use payment method issue — see [SINGLE-USE-PAYMENT-METHOD.md](SINGLE-USE-PAYMENT-METHOD.md).
 
 **An API error message from Stripe**
 Stripe rejected the hold creation request.
@@ -106,7 +106,7 @@ If the cause is not yet clear, enable detailed logging.
 2. Enable **Debug Logging**.
 3. Click **Save Changes**.
 4. Place a new test order and trigger the hold creation again.
-5. Check the logs in **WooCommerce → Status → Logs** and select the `securehold-stripe-deposits` log source.
+5. Check the logs in **WooCommerce → Status → Logs** — select the `securehold-stripe-deposits` log source.
 
 Look for lines marked `[error]` or `[warning]`. The log entries will show exactly where the hold creation process failed.
 

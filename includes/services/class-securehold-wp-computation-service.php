@@ -241,39 +241,111 @@ class Securehold_Deposit_Computation_Service {
      * @since 5.3.0
      */
     private static function compute_for_cart_priority_chain( $cart_items, $engine, $strategy_priority ) {
-        // Pass 1 & 2 (Product Rules, Category Rules) are premium (PRO Rule Engine).
-        // Skip them entirely when the Rule Engine is not active — even if legacy
-        // rule data still exists in the database (e.g. PRO deactivated).
+        // Pass 1: Product Rules — premium (PRO Rule Engine) only. Skip entirely
+        // when the Rule Engine is not active — even if legacy rule data still
+        // exists in the database (e.g. PRO deactivated).
         if ( securehold_rule_engine_enabled() ) {
-        // Pass 1: Product Rules.
+            if ( 'v2' === $engine ) {
+                $product_candidates = array();
+                foreach ( $cart_items as $cart_item ) {
+                    $product_id = $cart_item['product_id'];
+                    if ( get_post_meta( $product_id, '_securehold_enabled', true ) !== 'yes' ) {
+                        continue;
+                    }
+                    $product_timing = get_post_meta( $product_id, '_securehold_capture_timing', true );
+                    if ( empty( $product_timing ) ) {
+                        continue;
+                    }
+                    $config = Securehold_Config_Resolver::resolve_for_product( $product_id );
+                    $amount = self::extract_display_amount( $config );
+                    $prio   = isset( $strategy_priority[ $config['timing'] ] ) ? $strategy_priority[ $config['timing'] ] : 99;
+                    $product_candidates[] = array(
+                        'amount'       => $amount,
+                        'prio'         => $prio,
+                        'product_id'   => $product_id,
+                        'timing'       => isset( $config['timing'] ) ? $config['timing'] : 'immediate',
+                        'source_label' => isset( $config['source_label'] ) ? $config['source_label'] : '',
+                    );
+                }
+
+                if ( ! empty( $product_candidates ) ) {
+                    // Pick best: amount DESC → strategy ASC → id ASC.
+                    $best = $product_candidates[0];
+                    for ( $i = 1; $i < count( $product_candidates ); $i++ ) {
+                        $c = $product_candidates[ $i ];
+                        if ( $c['amount'] > $best['amount']
+                            || ( $c['amount'] === $best['amount'] && $c['prio'] < $best['prio'] )
+                            || ( $c['amount'] === $best['amount'] && $c['prio'] === $best['prio'] && $c['product_id'] < $best['product_id'] )
+                        ) {
+                            $best = $c;
+                        }
+                    }
+                    if ( $best['amount'] > 0 ) {
+                        return array(
+                            'aggregation_mode' => 'per_order',
+                            'total_amount'     => $best['amount'],
+                            'has_hold'         => true,
+                            'source'           => 'product_rule',
+                            'source_label'     => $best['source_label'],
+                            'timing'           => $best['timing'],
+                        );
+                    }
+                }
+            } else {
+                // Legacy: first product rule match wins.
+                foreach ( $cart_items as $cart_item ) {
+                    $product_id = $cart_item['product_id'];
+                    if ( get_post_meta( $product_id, '_securehold_enabled', true ) !== 'yes' ) {
+                        continue;
+                    }
+                    $product_timing = get_post_meta( $product_id, '_securehold_capture_timing', true );
+                    if ( empty( $product_timing ) ) {
+                        continue;
+                    }
+                    $config = Securehold_Config_Resolver::resolve_for_product( $product_id );
+                    $amount = self::extract_display_amount( $config );
+                    if ( $amount > 0 ) {
+                        return array(
+                            'aggregation_mode' => 'per_order',
+                            'total_amount'     => $amount,
+                            'has_hold'         => true,
+                            'source'           => 'product_rule',
+                            'source_label'     => isset( $config['source_label'] ) ? $config['source_label'] : '',
+                            'timing'           => isset( $config['timing'] ) ? $config['timing'] : 'immediate',
+                        );
+                    }
+                }
+            }
+        }
+
+        // Pass 1.5: MagePeople deposits (FREE, opt-in bridge) — independent of
+        // the PRO Rule Engine, gated only by its own
+        // securehold_magepeople_deposit_enabled option (checked inside
+        // resolve_for_product() / get_magepeople_settings()). Only reached
+        // when no product rule matched above.
         if ( 'v2' === $engine ) {
-            $product_candidates = array();
+            // v2 deterministic winner selection.
+            $mp_candidates = array();
             foreach ( $cart_items as $cart_item ) {
                 $product_id = $cart_item['product_id'];
-                if ( get_post_meta( $product_id, '_securehold_enabled', true ) !== 'yes' ) {
+                $config     = Securehold_Config_Resolver::resolve_for_product( $product_id );
+                if ( ! isset( $config['source'] ) || 'magepeople_deposit' !== $config['source'] ) {
                     continue;
                 }
-                $product_timing = get_post_meta( $product_id, '_securehold_capture_timing', true );
-                if ( empty( $product_timing ) ) {
-                    continue;
-                }
-                $config = Securehold_Config_Resolver::resolve_for_product( $product_id );
                 $amount = self::extract_display_amount( $config );
-                $prio   = isset( $strategy_priority[ $config['timing'] ] ) ? $strategy_priority[ $config['timing'] ] : 99;
-                $product_candidates[] = array(
+                $timing = isset( $config['timing'] ) ? $config['timing'] : 'immediate';
+                $mp_candidates[] = array(
                     'amount'       => $amount,
-                    'prio'         => $prio,
+                    'prio'         => isset( $strategy_priority[ $timing ] ) ? $strategy_priority[ $timing ] : 99,
                     'product_id'   => $product_id,
-                    'timing'       => isset( $config['timing'] ) ? $config['timing'] : 'immediate',
+                    'timing'       => $timing,
                     'source_label' => isset( $config['source_label'] ) ? $config['source_label'] : '',
                 );
             }
-
-            if ( ! empty( $product_candidates ) ) {
-                // Pick best: amount DESC → strategy ASC → id ASC.
-                $best = $product_candidates[0];
-                for ( $i = 1; $i < count( $product_candidates ); $i++ ) {
-                    $c = $product_candidates[ $i ];
+            if ( ! empty( $mp_candidates ) ) {
+                $best = $mp_candidates[0];
+                for ( $i = 1; $i < count( $mp_candidates ); $i++ ) {
+                    $c = $mp_candidates[ $i ];
                     if ( $c['amount'] > $best['amount']
                         || ( $c['amount'] === $best['amount'] && $c['prio'] < $best['prio'] )
                         || ( $c['amount'] === $best['amount'] && $c['prio'] === $best['prio'] && $c['product_id'] < $best['product_id'] )
@@ -286,31 +358,28 @@ class Securehold_Deposit_Computation_Service {
                         'aggregation_mode' => 'per_order',
                         'total_amount'     => $best['amount'],
                         'has_hold'         => true,
-                        'source'           => 'product_rule',
+                        'source'           => 'magepeople_deposit',
                         'source_label'     => $best['source_label'],
                         'timing'           => $best['timing'],
                     );
                 }
             }
         } else {
-            // Legacy: first product rule match wins.
+            // Legacy: first match wins, mirroring the legacy product-rule
+            // loop above.
             foreach ( $cart_items as $cart_item ) {
                 $product_id = $cart_item['product_id'];
-                if ( get_post_meta( $product_id, '_securehold_enabled', true ) !== 'yes' ) {
+                $config     = Securehold_Config_Resolver::resolve_for_product( $product_id );
+                if ( ! isset( $config['source'] ) || 'magepeople_deposit' !== $config['source'] ) {
                     continue;
                 }
-                $product_timing = get_post_meta( $product_id, '_securehold_capture_timing', true );
-                if ( empty( $product_timing ) ) {
-                    continue;
-                }
-                $config = Securehold_Config_Resolver::resolve_for_product( $product_id );
                 $amount = self::extract_display_amount( $config );
                 if ( $amount > 0 ) {
                     return array(
                         'aggregation_mode' => 'per_order',
                         'total_amount'     => $amount,
                         'has_hold'         => true,
-                        'source'           => 'product_rule',
+                        'source'           => 'magepeople_deposit',
                         'source_label'     => isset( $config['source_label'] ) ? $config['source_label'] : '',
                         'timing'           => isset( $config['timing'] ) ? $config['timing'] : 'immediate',
                     );
@@ -318,7 +387,9 @@ class Securehold_Deposit_Computation_Service {
             }
         }
 
-        // Pass 2: Category Rules — collect all matching, pick best.
+        // Pass 2: Category Rules — premium (PRO Rule Engine) only. Collect all
+        // matching, pick best.
+        if ( securehold_rule_engine_enabled() ) {
         $all_category_rules = get_option( 'securehold_category_rules', array() );
         if ( is_array( $all_category_rules ) && ! empty( $all_category_rules ) ) {
             $seen_term_ids = array();
@@ -387,7 +458,7 @@ class Securehold_Deposit_Computation_Service {
                 }
             }
         }
-        } // end securehold_rule_engine_enabled()
+        } // end securehold_rule_engine_enabled() — Category Rules
 
         // Pass 3: Global.
         $global_raw    = get_option( 'securehold_default_hold_amount', '300' );

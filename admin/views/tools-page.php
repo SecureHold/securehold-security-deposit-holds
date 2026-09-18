@@ -47,7 +47,17 @@ if ( ! defined( 'ABSPATH' ) ) exit;
              * FREE alone renders only Diagnostics and System.
              */
             do_action( 'securehold_tools_tab_nav' );
-            ?>
+
+            // FREE preview only — shown when PRO's Advanced Tools are not active.
+            // Same gate ( securehold_feature_enabled( 'tools' ) ) PRO itself uses,
+            // so this link never appears alongside the real one.
+            if ( ! securehold_feature_enabled( 'tools' ) ) :
+                ?>
+                <a href="#advanced" class="sh-tab-link" role="tab" aria-selected="false" aria-controls="sh-tab-advanced" data-tab="advanced">
+                    <span class="dashicons dashicons-admin-tools"></span><?php esc_html_e( 'Advanced Tools', 'securehold-security-deposit-holds' ); ?>
+                    <span class="sh-pro-badge"><?php esc_html_e( 'PRO', 'securehold-security-deposit-holds' ); ?></span>
+                </a>
+            <?php endif; ?>
             <a href="#system" class="sh-tab-link" role="tab" aria-selected="false" aria-controls="sh-tab-system" data-tab="system">
                 <span class="dashicons dashicons-admin-generic"></span><?php esc_html_e( 'System', 'securehold-security-deposit-holds' ); ?>
             </a>
@@ -199,7 +209,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                 </div>
                 <div class="sh-card-body">
                     <p class="sh-card-desc">
-                        <?php esc_html_e( 'Download a sanitized diagnostic bundle to share with support when troubleshooting deposits, webhooks, or configuration issues.', 'securehold-security-deposit-holds' ); ?>
+                        <?php esc_html_e( 'Download a sanitized diagnostic bundle to share with support when troubleshooting deposits, webhooks, license, or configuration issues.', 'securehold-security-deposit-holds' ); ?>
                     </p>
                     <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
                         <?php wp_nonce_field( 'securehold_export_support_bundle_nonce' ); ?>
@@ -210,7 +220,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                         </button>
                     </form>
                     <p class="sh-card-hint">
-                        <?php esc_html_e( 'The bundle contains environment info, sanitized settings, and recent logs. API keys and secrets are never included in full.', 'securehold-security-deposit-holds' ); ?>
+                        <?php esc_html_e( 'The bundle contains environment info, sanitized settings, recent logs, and, when SecureHold PRO is installed, non-sensitive license status. API keys and secrets are never included in full.', 'securehold-security-deposit-holds' ); ?>
                     </p>
                 </div>
             </div>
@@ -227,7 +237,20 @@ if ( ! defined( 'ABSPATH' ) ) exit;
      * (admin-tools.js) shows/hides them by data-tab.
      */
     do_action( 'securehold_tools_extra_panels' );
-    ?>
+
+    // FREE preview only — single locked panel, no PRO tool code loaded.
+    if ( ! securehold_feature_enabled( 'tools' ) ) :
+        ?>
+        <div id="sh-tab-advanced" class="sh-tab-panel" role="tabpanel" style="display:none;">
+            <?php
+            $sh_locked_title       = __( 'Advanced Tools', 'securehold-security-deposit-holds' );
+            $sh_locked_description = __( 'Scheduled holds monitoring, checkout engine status, a hold dry-run simulator, database integrity checks, legacy-strategy migration, and manual sync are available in SecureHold PRO.', 'securehold-security-deposit-holds' );
+            $sh_locked_icon        = 'dashicons-admin-tools';
+            include plugin_dir_path( __FILE__ ) . 'partials/pro-locked-panel.php';
+            unset( $sh_locked_title, $sh_locked_description, $sh_locked_icon );
+            ?>
+        </div>
+    <?php endif; ?>
 
 </div><!-- /wrap -->
 

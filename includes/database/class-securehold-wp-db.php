@@ -27,6 +27,26 @@ class SecureHold_DB {
      *                          status, intent_id, customer_id, payment_method_id, notes, created_at.
      * @return int|false        The new row ID on success, false on failure.
      */
+    /**
+     * When an authorization placed now should expire.
+     *
+     * Stripe cancels an uncaptured PaymentIntent after seven days, so the stored
+     * preference is clamped to that window rather than trusted blindly. Shared
+     * with Securehold_Hold_State so an insert and a transition cannot disagree
+     * about the same deadline.
+     *
+     * @since 3.4.5
+     *
+     * @return string MySQL datetime in UTC.
+     */
+    public static function authorization_expiry() {
+        $days = (int) get_option('securehold_auto_release_days', 7);
+        if ($days < 1) { $days = 1; }
+        if ($days > 7) { $days = 7; } // Stripe hard limit
+
+        return gmdate('Y-m-d H:i:s', strtotime('+' . $days . ' days'));
+    }
+
     public static function insert_deposit($data) {
         global $wpdb;
         $table_name = $wpdb->prefix . 'securehold_holds';
@@ -89,12 +109,20 @@ class SecureHold_DB {
 
         // Set expires_at only for authorized holds — Stripe cancels uncaptured PaymentIntents after 7 days.
         if ($data['status'] === 'authorized') {
-            // Honour the stored option for all users, clamped to Stripe's 1-7 day window.
-            $auto_release_days = (int) get_option('securehold_auto_release_days', 7);
-            if ($auto_release_days < 1) $auto_release_days = 1;
-            if ($auto_release_days > 7) $auto_release_days = 7; // Stripe hard limit
-            $insert_data['expires_at'] = gmdate('Y-m-d H:i:s', strtotime('+' . $auto_release_days . ' days'));
+            $insert_data['expires_at'] = self::authorization_expiry();
             $formats[] = '%s'; // expires_at appended conditionally — only present for authorized holds
+        }
+
+        // authorized_at is persisted only when the caller states it. This layer
+        // knows a status, not a business event: 'authorized' in an insert can
+        // describe a hold Stripe just approved, or a row being backfilled from
+        // something that happened earlier. Deriving the moment from the status
+        // would have this primitive invent history. The scheduler knows when the
+        // authorization actually happened and says so; failed, pending,
+        // pending_manual and scheduled rows never carry one.
+        if (!empty($data['authorized_at'])) {
+            $insert_data['authorized_at'] = $data['authorized_at'];
+            $formats[] = '%s';
         }
 
         $result = $wpdb->insert($table_name, $insert_data, $formats);

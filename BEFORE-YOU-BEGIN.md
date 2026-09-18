@@ -8,7 +8,7 @@ Before installing SecureHold WP, review this checklist. Having everything in pla
 
 - [ ] **WordPress** is installed and running (version 6.0 or later recommended)
 - [ ] **WooCommerce** is installed and active (version 7.0 or later recommended)
-- [ ] **WooCommerce Stripe Gateway** is installed and active. This is the official Stripe plugin for WooCommerce, available free from WordPress.org
+- [ ] **WooCommerce Stripe Gateway** is installed and active — this is the official Stripe plugin for WooCommerce, available free from WordPress.org
 
 > The WooCommerce Stripe Gateway handles the payment at checkout. SecureHold WP adds the security deposit layer on top of it. Both plugins must be present.
 
@@ -52,7 +52,7 @@ For the FREE version with Immediate or Manual timing, WP-Cron is not required.
 
 ### The deposit hold is not shown as a separate WooCommerce order
 
-SecureHold WP does not create a second WooCommerce order for the deposit. The hold is managed as a deposit record linked to the existing order. It appears in **SecureHold WP → Deposits** and in the WooCommerce order metabox, not as a separate order.
+SecureHold WP does not create a second WooCommerce order for the deposit. The hold is managed as a deposit record linked to the existing order. It appears in **SecureHold WP → Deposits** and in the WooCommerce order metabox — not as a separate order.
 
 ---
 

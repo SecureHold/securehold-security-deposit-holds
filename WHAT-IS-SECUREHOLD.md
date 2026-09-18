@@ -2,7 +2,7 @@
 
 ## In Plain Terms
 
-SecureHold WP is a WordPress plugin that lets you collect a **security deposit** from customers when they place a WooCommerce order, without charging them upfront.
+SecureHold WP is a WordPress plugin that lets you collect a **security deposit** from customers when they place a WooCommerce order — without charging them upfront.
 
 It works by placing a **hold** on the customer's credit or debit card through Stripe. Think of it like the hold a hotel puts on your card at check-in. The money is reserved but not taken. At the end of the stay, the hotel either charges the deposit or releases it. SecureHold WP gives you the same capability for your WooCommerce store.
 
@@ -82,7 +82,7 @@ Customers do not need to take any additional action. The hold is created automat
 
 ## Is It Safe?
 
-Yes. SecureHold WP uses Stripe's official pre-authorization API. The customer's card details are never stored by the plugin. They are handled entirely by Stripe, which is a PCI DSS Level 1 certified payment processor.
+Yes. SecureHold WP uses Stripe's official pre-authorization API. The customer's card details are never stored by the plugin — they are handled entirely by Stripe, which is a PCI DSS Level 1 certified payment processor.
 
 The hold uses the same payment method the customer used at checkout. No second card entry is required.
 

@@ -257,6 +257,27 @@ if ( ! function_exists( 'securehold_feature_enabled' ) ) {
     }
 }
 
+if ( ! function_exists( 'securehold_license_diagnostics' ) ) {
+    /**
+     * Non-sensitive PRO license diagnostics, for the Support Bundle.
+     *
+     * FREE never references Securehold_License_Manager directly — PRO
+     * registers add_filter( 'securehold_license_diagnostics', ... ) when it
+     * loads (same decoupling as securehold_feature_enabled()). With PRO
+     * absent, or before its filter is registered, this returns the default
+     * shape below rather than an empty array, so callers never have to
+     * special-case a missing key.
+     *
+     * @since 3.4.7
+     * @return array
+     */
+    function securehold_license_diagnostics() {
+        $default = array( 'pro_present' => false );
+
+        return (array) apply_filters( 'securehold_license_diagnostics', $default );
+    }
+}
+
 if ( ! function_exists( 'securehold_license_status' ) ) {
     /**
      * Returns the current stored license status for SecureHold PRO.
@@ -295,3 +316,68 @@ if ( ! function_exists( 'securehold_license_is_valid' ) ) {
     }
 }
 
+
+if ( ! function_exists( 'securehold_validate_stripe_key' ) ) {
+    /**
+     * Check that a Stripe key carries one of the expected prefixes.
+     *
+     * Lived in admin/views/settings-page.php, so it only existed while that page
+     * rendered — which is why the Setup Wizard, saving the same credentials
+     * through a different screen, validated nothing at all.
+     *
+     * Prefix agreement is a cheap sanity check, not proof of anything: a well
+     * formed key can still belong to another account or another test
+     * environment. Securehold_Stripe_Context answers that question.
+     *
+     * @since 3.4.4
+     *
+     * @param string $value    Submitted key.
+     * @param array  $prefixes Accepted prefixes.
+     * @return bool
+     */
+    function securehold_validate_stripe_key( $value, array $prefixes ) {
+        foreach ( $prefixes as $prefix ) {
+            if ( strncmp( $value, $prefix, strlen( $prefix ) ) === 0 ) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+if ( ! function_exists( 'securehold_stripe_key_prefixes' ) ) {
+    /**
+     * Accepted key prefixes for a given mode.
+     *
+     * Restricted keys (rk_) are accepted: they are a legitimate, tighter-scoped
+     * way to run SecureHold, even though they may be denied Account access.
+     *
+     * @since 3.4.4
+     *
+     * @param string $mode 'test' or 'live'.
+     * @return array publishable, secret.
+     */
+    function securehold_stripe_key_prefixes( $mode ) {
+        return ( $mode === 'live' )
+            ? array( 'publishable' => array( 'pk_live_' ), 'secret' => array( 'sk_live_', 'rk_live_' ) )
+            : array( 'publishable' => array( 'pk_test_' ), 'secret' => array( 'sk_test_', 'rk_test_' ) );
+    }
+}
+
+if ( ! function_exists( 'securehold_get_webhook_url' ) ) {
+    /**
+     * The SecureHold webhook endpoint URL.
+     *
+     * Single source of truth, matching the route registered by
+     * Securehold_Webhook::register_routes(). Diagnostics used to compose their
+     * own strings, and one of them still printed /wc-api/securehold_webhook/ —
+     * a path this plugin has never registered — which sent support looking for a
+     * webhook problem that did not exist.
+     *
+     * @since 3.4.4
+     * @return string
+     */
+    function securehold_get_webhook_url() {
+        return rest_url( 'securehold/v1/webhook' );
+    }
+}

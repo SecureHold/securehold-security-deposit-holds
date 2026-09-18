@@ -26,12 +26,14 @@ class Securehold_Core {
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-securehold-wp-loader.php';
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/helpers.php';
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/database/class-securehold-wp-db.php';
+        require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-securehold-wp-hold-state.php';
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/stripe/class-securehold-wp-stripe.php';
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/woocommerce/class-securehold-wp-woo.php';
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/cron/class-securehold-wp-scheduler.php';
         require_once plugin_dir_path(dirname(__FILE__)) . 'admin/class-securehold-wp-admin.php';
         require_once plugin_dir_path(dirname(__FILE__)) . 'admin/class-securehold-wp-admin-notices.php';
-        
+        require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-securehold-wp-telemetry.php';
+
         $this->loader = new Securehold_Loader();
     }
     
@@ -42,8 +44,17 @@ class Securehold_Core {
         $this->loader->add_action('wp_ajax_securehold_test_config', $plugin_admin, 'ajax_test_config');
         $this->loader->add_action('admin_post_securehold_reset_wizard', $plugin_admin, 'handle_reset_wizard');
         $this->loader->add_action('admin_post_securehold_export_support_bundle', $plugin_admin, 'handle_export_support_bundle');
-        
-    }    
+
+        // Configuration warnings. The class was loaded but never instantiated,
+        // so this notice had never been able to display on any install.
+        $plugin_notices = new Securehold_Admin_Notices();
+        $this->loader->add_action('admin_notices', $plugin_notices, 'show_configuration_warnings');
+        $this->loader->add_action('admin_notices', $plugin_notices, 'show_failed_hold_warning');
+
+        // Opt-in usage telemetry — self-registers its own hooks (notice,
+        // AJAX, cron), same pattern as PRO's Securehold_License_Manager.
+        new Securehold_Wp_Telemetry();
+    }
     
     private function define_public_hooks() {
         // Instantiate SecureHold_Woo so its constructor calls define_public_hooks(),

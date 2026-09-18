@@ -17,6 +17,7 @@ class Securehold_Health_Check {
         return array(
             'stripe_sdk'          => self::check_stripe_sdk(),
             'stripe_keys'         => self::check_stripe_keys(),
+            'stripe_context'      => self::check_stripe_context(),
             'webhook'             => self::check_webhook(),
             'woocommerce'         => self::check_woocommerce(),
             'stripe_gateway'      => self::check_stripe_gateway(),
@@ -129,33 +130,212 @@ class Securehold_Health_Check {
     }
     
     /**
+     * Check that SecureHold and WooCommerce share one Stripe context.
+     *
+     * check_stripe_keys() above proves a key works. It cannot prove the key
+     * points where WooCommerce points: Balance::retrieve() answers for any valid
+     * key of any account or sandbox. This check closes that gap by trying to
+     * read a PaymentIntent WooCommerce actually created.
+     *
+     * Reports 'warning', never 'error': a hold may still succeed on an
+     * inconclusive verdict, and the merchant should not be told deposits are
+     * broken on the strength of a diagnosis that could not complete.
+     *
+     * @since 3.4.4
+     * @return array
+     */
+    public static function check_stripe_context() {
+
+        if ( ! class_exists( 'Securehold_Stripe_Context' ) && defined( 'SECUREHOLD_PLUGIN_DIR' ) ) {
+            require_once SECUREHOLD_PLUGIN_DIR . 'includes/stripe/class-securehold-wp-stripe-context.php';
+        }
+
+        if ( ! class_exists( 'Securehold_Stripe_Context' ) ) {
+            return array(
+                'status'  => 'warning',
+                'message' => __( 'Stripe context could not be evaluated.', 'securehold-security-deposit-holds' ),
+            );
+        }
+
+        $action = array(
+            'label' => __( 'Re-test Stripe Context', 'securehold-security-deposit-holds' ),
+            'url'   => wp_nonce_url(
+                admin_url( 'admin.php?page=securehold-health&action=securehold_test_stripe_context' ),
+                'securehold_test_stripe_context'
+            ),
+        );
+
+        $context = Securehold_Stripe_Context::get();
+        $status  = $context['status'];
+
+        switch ( $status ) {
+
+            case Securehold_Stripe_Context::STATUS_COMPATIBLE:
+                return array(
+                    'status'  => 'success',
+                    'message' => sprintf(
+                        /* translators: %s is a WooCommerce order number */
+                        __( 'SecureHold and WooCommerce share the same Stripe context (verified against order #%s).', 'securehold-security-deposit-holds' ),
+                        $context['probe']['order_id']
+                    ),
+                    'action'  => $action,
+                );
+
+            case Securehold_Stripe_Context::STATUS_INVALID_CREDENTIALS:
+                return array(
+                    'status'  => 'error',
+                    'message' => __( 'Stripe credentials invalid: the configured secret key was rejected by Stripe.', 'securehold-security-deposit-holds' ),
+                    'action'  => array(
+                        'label' => __( 'Update Keys', 'securehold-security-deposit-holds' ),
+                        'url'   => admin_url( 'admin.php?page=securehold-settings' ),
+                    ),
+                );
+
+            case Securehold_Stripe_Context::STATUS_MODE_MISMATCH:
+                return array(
+                    'status'  => 'error',
+                    'message' => sprintf(
+                        /* translators: 1: SecureHold mode, 2: WooCommerce Stripe mode */
+                        __( 'Stripe mode mismatch: SecureHold is in %1$s mode while the WooCommerce Stripe Gateway is in %2$s mode. Security deposits cannot be created until both match.', 'securehold-security-deposit-holds' ),
+                        ucfirst( (string) $context['mode']['securehold'] ),
+                        ucfirst( (string) $context['mode']['woocommerce'] )
+                    ),
+                    'action'  => array(
+                        'label' => __( 'Open Settings', 'securehold-security-deposit-holds' ),
+                        'url'   => admin_url( 'admin.php?page=securehold-settings' ),
+                    ),
+                );
+
+            case Securehold_Stripe_Context::STATUS_ACCOUNT_MISMATCH:
+                return array(
+                    'status'  => 'error',
+                    'message' => sprintf(
+                        /* translators: 1: SecureHold Stripe account id, 2: WooCommerce Stripe account id */
+                        __( 'Stripe account mismatch: SecureHold uses %1$s while WooCommerce uses %2$s. Security deposits will fail because the payment does not exist in SecureHold\'s account.', 'securehold-security-deposit-holds' ),
+                        $context['accounts']['securehold'],
+                        $context['accounts']['woocommerce']
+                    ),
+                    'action'  => array(
+                        'label' => __( 'Update Keys', 'securehold-security-deposit-holds' ),
+                        'url'   => admin_url( 'admin.php?page=securehold-settings' ),
+                    ),
+                );
+
+            case Securehold_Stripe_Context::STATUS_CONTEXT_INCOMPATIBLE:
+                return array(
+                    'status'  => 'error',
+                    'message' => sprintf(
+                        /* translators: %s is a WooCommerce order number */
+                        __( 'Stripe context incompatible: the payment on order #%s is not visible with SecureHold\'s API keys. This usually means the keys come from a different Stripe test environment or sandbox than the one WooCommerce is connected to. Copy the keys from the environment where that payment appears.', 'securehold-security-deposit-holds' ),
+                        $context['probe']['order_id']
+                    ),
+                    'action'  => array(
+                        'label' => __( 'Update Keys', 'securehold-security-deposit-holds' ),
+                        'url'   => admin_url( 'admin.php?page=securehold-settings' ),
+                    ),
+                );
+
+            default:
+                $message = in_array( 'no_stripe_orders', $context['notes'], true )
+                    ? __( 'Stripe context not verified yet: no recent WooCommerce Stripe payment is available to test against. No problem has been detected — this check completes on its own after the first Stripe payment.', 'securehold-security-deposit-holds' )
+                    : __( 'Stripe context not verified: the check could not reach a conclusion. No problem has been detected — re-test in a moment.', 'securehold-security-deposit-holds' );
+
+                return array(
+                    'status'  => 'warning',
+                    'message' => $message,
+                    'action'  => $action,
+                );
+        }
+    }
+
+    /**
      * Check webhook configuration
      */
     public static function check_webhook() {
-        $webhook_secret = get_option('securehold_webhook_secret');
-        
-        if (!empty($webhook_secret)) {
+
+        if ( ! class_exists( 'Securehold_Webhook_Configurator' ) && defined( 'SECUREHOLD_PLUGIN_DIR' ) ) {
+            require_once SECUREHOLD_PLUGIN_DIR . 'includes/class-securehold-wp-webhook-configurator.php';
+        }
+
+        $configure = array(
+            'label' => __( 'Auto-Configure', 'securehold-security-deposit-holds' ),
+            'url'   => admin_url( 'admin.php?page=securehold-setup-wizard&step=6' ),
+        );
+
+        if ( ! class_exists( 'Securehold_Webhook_Configurator' ) ) {
             return array(
-                'status'  => 'success',
-                'message' => __('Webhook is configured', 'securehold-security-deposit-holds'),
-                'action'  => array(
-                    'label' => __('Test Webhook', 'securehold-security-deposit-holds'),
-                    'url'   => wp_nonce_url(
-                        admin_url('admin.php?page=securehold-health&action=securehold_test_webhook'),
-                        'securehold_test_webhook'
-                    ),
-                ),
+                'status'  => 'warning',
+                'message' => __( 'Webhook configuration could not be evaluated.', 'securehold-security-deposit-holds' ),
+                'action'  => $configure,
             );
         }
-        
-        return array(
-            'status' => 'warning',
-            'message' => __('Webhook is not configured', 'securehold-security-deposit-holds'),
-            'action' => array(
-                'label' => __('Auto-Configure', 'securehold-security-deposit-holds'),
-                'url' => admin_url('admin.php?page=securehold-setup-wizard&step=4')
-            )
-        );
+
+        // Read-only, and cached: refreshing this page must never create or
+        // rotate anything on the merchant's Stripe account, nor call Stripe
+        // again on every load. The entry is keyed to the current credentials, so
+        // a rotation invalidates it rather than showing a stale verdict.
+        $state = Securehold_Webhook_Configurator::get_status();
+
+        switch ( $state['status'] ) {
+
+            case Securehold_Webhook_Configurator::STATUS_CONFIGURED:
+                return array(
+                    'status'  => 'success',
+                    'message' => __( 'Webhook is configured and the endpoint is reachable with the current Stripe credentials.', 'securehold-security-deposit-holds' ),
+                    'action'  => array(
+                        'label' => __( 'Test Webhook', 'securehold-security-deposit-holds' ),
+                        'url'   => wp_nonce_url(
+                            admin_url( 'admin.php?page=securehold-health&action=securehold_test_webhook' ),
+                            'securehold_test_webhook'
+                        ),
+                    ),
+                );
+
+            case Securehold_Webhook_Configurator::STATUS_ENDPOINT_INACCESSIBLE:
+                return array(
+                    'status'  => 'error',
+                    'message' => __( 'The registered Stripe webhook does not exist under the API keys currently configured. This normally follows a change of Stripe account, environment or sandbox. Re-run the webhook configuration to register a new endpoint.', 'securehold-security-deposit-holds' ),
+                    'action'  => $configure,
+                );
+
+            case Securehold_Webhook_Configurator::STATUS_SECRET_MISSING:
+                return array(
+                    'status'  => 'error',
+                    'message' => __( 'The Stripe webhook endpoint exists but SecureHold holds no signing secret for it. Stripe only reveals that secret when an endpoint is created, so it cannot be recovered: either paste it in Settings, or register a new endpoint.', 'securehold-security-deposit-holds' ),
+                    'action'  => $configure,
+                );
+
+            case Securehold_Webhook_Configurator::STATUS_REPAIR_REQUIRED:
+                return array(
+                    'status'  => 'error',
+                    'message' => __( 'The registered Stripe webhook no longer points at this site. Re-run the webhook configuration.', 'securehold-security-deposit-holds' ),
+                    'action'  => $configure,
+                );
+
+            case Securehold_Webhook_Configurator::STATUS_INCOMPLETE:
+                return array(
+                    'status'  => 'warning',
+                    'message' => __( 'A webhook signing secret is stored but SecureHold does not know which Stripe endpoint it belongs to. Deposits still work; webhook-driven status updates may not.', 'securehold-security-deposit-holds' ),
+                    'action'  => $configure,
+                );
+
+            case Securehold_Webhook_Configurator::STATUS_NOT_CONFIGURED:
+                return array(
+                    'status'  => 'warning',
+                    'message' => __( 'Webhook is not configured.', 'securehold-security-deposit-holds' ),
+                    'action'  => $configure,
+                );
+
+            default:
+                // Network trouble, a restricted key, rejected credentials: the
+                // check could not conclude, and says so rather than inventing a
+                // fault or a repair.
+                return array(
+                    'status'  => 'warning',
+                    'message' => __( 'Webhook status could not be verified against Stripe. No problem has been detected — try again in a moment.', 'securehold-security-deposit-holds' ),
+                    'action'  => $configure,
+                );
+        }
     }
     
     /**

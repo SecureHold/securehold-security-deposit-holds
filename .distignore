@@ -32,6 +32,10 @@ tests/
 bin/
 node_modules/
 docs/
+dev-notes/
+build/
+outputs/
+deliverables/
 
 # ── Editor / OS noise ─────────────────────────────────────────────────────────
 *.bak
@@ -49,8 +53,14 @@ Thumbs.db
 *.log
 *.zip
 
+# PHP-Scoper writes this alongside the prefixed vendor. It requires a
+# vendor/autoload.php that the pruned vendor deliberately does not ship, and
+# nothing loads it — the SDK is required directly by the Stripe installer.
+scoper-autoload.php
+
 # ── ALWAYS INCLUDED — never listed above ──────────────────────────────────────
-# vendor/       Stripe PHP SDK — required at runtime
+# vendor/       Stripe PHP SDK, prefixed at build time — required at runtime
+#               (dev dependencies are pruned: only stripe/stripe-php ships)
 # README.md     user-facing documentation (exception above)
 # CHANGELOG.md  version history for users (exception above)
 # readme.txt    WordPress.org plugin header (not affected by *.md — different extension)

@@ -27,7 +27,10 @@ class Securehold_Webhook {
         try {
             $event = \Stripe\Webhook::constructEvent($payload, $sig_header, $webhook_secret);
         } catch (\Exception $e) {
-            securehold_log('Webhook signature verification failed', array('error' => $e->getMessage()));
+            // A refused signature is a security event, not routine chatter. It
+            // stays below 'error' because a probe, a bot or a malformed request
+            // against a public endpoint is not a product failure.
+            securehold_log('Webhook signature verification failed', array('error' => $e->getMessage()), 'warning');
             return new WP_Error('webhook_error', $e->getMessage(), array('status' => 400));
         }
 
@@ -41,11 +44,19 @@ class Securehold_Webhook {
 
         switch ($event->type) {
             case 'payment_intent.amount_capturable_updated':
-                $this->handle_authorization($intent);
+                // The moment the funds actually became capturable, which is the
+                // authorization itself. The intent's own created is when it was
+                // opened — the same second for a hold confirmed in one call, but
+                // not when confirmation comes later, after a 3DS challenge or a
+                // scheduled strategy.
+                $this->handle_authorization($intent, isset($event->created) ? (int) $event->created : null);
                 break;
 
             case 'payment_intent.succeeded':
-                $this->handle_capture($intent);
+                // The event's own moment, not the intent's. A deposit's intent
+                // was created when the hold was authorized, days before the
+                // capture this event announces.
+                $this->handle_capture($intent, isset($event->created) ? (int) $event->created : null);
                 break;
 
             case 'payment_intent.canceled':
@@ -74,30 +85,25 @@ class Securehold_Webhook {
         return $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE intent_id = %s", $intent_id));
     }
 
-    private function handle_authorization($intent) {
+    private function handle_authorization($intent, $event_created = null) {
         $hold = $this->find_securehold_hold($intent->id);
         if (!$hold) {
             // Not a SecureHold PI — ignore silently (likely a checkout PI)
             return;
         }
 
-        global $wpdb;
-        $table = $wpdb->prefix . 'securehold_holds';
+        $r = Securehold_Hold_State::transition( $hold, 'authorized', array(
+            'occurred_at' => $event_created,
+            'source'      => 'webhook',
+        ) );
 
-        $wpdb->update(
-            $table,
-            array(
-                'status' => 'authorized',
-                'authorized_at' => current_time('mysql'),
-                'expires_at' => gmdate('Y-m-d H:i:s', strtotime('+7 days'))
-            ),
-            array('intent_id' => $intent->id)
-        );
+        if ( ! $r['applied'] ) {
+            return;
+        }
 
-        securehold_log('Hold authorized via webhook', array('intent_id' => $intent->id, 'order_id' => $hold->order_id));
     }
 
-    private function handle_capture($intent) {
+    private function handle_capture($intent, $event_created = null) {
         $hold = $this->find_securehold_hold($intent->id);
         if (!$hold) {
             // Not a SecureHold PI — ignore silently (likely a checkout PI)
@@ -115,17 +121,19 @@ class Securehold_Webhook {
         $previous_captured = floatval($hold->captured_amount);
         $delta_captured = $new_captured_total - $previous_captured;
 
-        $wpdb->update(
-            $table,
-            array(
-                'status' => 'captured',
-                'captured_amount' => $new_captured_total,
-                'captured_at' => current_time('mysql')
-            ),
-            array('intent_id' => $intent->id),
-            array('%s', '%f', '%s'),
-            array('%s')
-        );
+        // The delta guard below already kept the note and the emails from
+        // repeating; what it never protected was captured_at, which a webhook
+        // arriving after an admin capture would rewrite. The state helper keeps
+        // a terminal timestamp once written.
+        $r = Securehold_Hold_State::transition( $hold, 'captured', array(
+            'captured_amount' => $new_captured_total,
+            'occurred_at'     => $event_created,
+            'source'          => 'webhook',
+        ) );
+
+        if ( ! $r['applied'] && $delta_captured <= 0 ) {
+            return;
+        }
 
         if ($delta_captured > 0) {
             $order = wc_get_order($hold->order_id);
@@ -171,19 +179,19 @@ class Securehold_Webhook {
             return;
         }
 
-        global $wpdb;
-        $table = $wpdb->prefix . 'securehold_holds';
+        // The admin release usually gets here first; the webhook then arrives a
+        // second later. It used to rewrite released_at, add a second note and
+        // send the customer a second email. Now it recognises the state is
+        // already what it came to announce, and stops.
+        $r = Securehold_Hold_State::transition( $hold, 'released', array(
+            'occurred_at' => isset( $intent->canceled_at ) ? (int) $intent->canceled_at : null,
+            'source'      => 'webhook',
+        ) );
 
-        $wpdb->update(
-            $table,
-            array(
-                'status' => 'released',
-                'released_at' => current_time('mysql')
-            ),
-            array('intent_id' => $intent->id)
-        );
+        if ( ! $r['applied'] ) {
+            return;
+        }
 
-        securehold_log('Hold released via webhook', array('intent_id' => $intent->id, 'order_id' => $hold->order_id));
 
         $order = wc_get_order( $hold->order_id );
         if ( $order ) {
@@ -209,42 +217,13 @@ class Securehold_Webhook {
             return;
         }
 
-        global $wpdb;
-        $table = $wpdb->prefix . 'securehold_holds';
+        $r = Securehold_Hold_State::transition( $hold, 'failed', array(
+            'source' => 'webhook',
+        ) );
 
-        // Extract actual Stripe error details (never invent)
-        $error_message = '';
-        $error_code = '';
-        $error_type = '';
-        if (isset($intent->last_payment_error)) {
-            $lpe = $intent->last_payment_error;
-            $error_message = isset($lpe->message) ? $lpe->message : '';
-            $error_code    = isset($lpe->code) ? $lpe->code : '';
-            $error_type    = isset($lpe->type) ? $lpe->type : '';
+        if ( ! $r['applied'] ) {
+            return;
         }
-
-        // Build notes from real Stripe data only
-        $notes = '';
-        if (!empty($error_message)) {
-            $notes = sprintf('Stripe error: %s', $error_message);
-            if (!empty($error_code)) {
-                $notes .= sprintf(' [code: %s]', $error_code);
-            }
-            if (!empty($error_type)) {
-                $notes .= sprintf(' [type: %s]', $error_type);
-            }
-        }
-
-        $update_data = array('status' => 'failed');
-        if (!empty($notes)) {
-            $update_data['notes'] = sanitize_textarea_field($notes);
-        }
-
-        $wpdb->update(
-            $table,
-            $update_data,
-            array('intent_id' => $intent->id)
-        );
 
         securehold_log('Hold failed via webhook', array(
             'intent_id'     => $intent->id,

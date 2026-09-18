@@ -61,6 +61,15 @@ $total_pages = $per_page > 0 ? (int) ceil( $total_rows / $per_page ) : 1;
     );
     ?>
 
+    <!-- FREE preview only — informational note, no PRO logic. Hidden above when
+         securehold_feature_enabled('logs') is true, since PRO's own log view
+         already returned earlier in this file in that case. -->
+    <p class="sh-card-hint" style="margin:-0.5rem 0 1rem;">
+        <span class="sh-pro-badge"><?php esc_html_e( 'PRO', 'securehold-security-deposit-holds' ); ?></span>
+        <?php esc_html_e( 'Additional log tools, such as clearing history and detailed event data, are available in SecureHold PRO.', 'securehold-security-deposit-holds' ); ?>
+        <a href="<?php echo esc_url( SECUREHOLD_WP_URL_PRICING ); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e( 'Learn more', 'securehold-security-deposit-holds' ); ?></a>
+    </p>
+
     <div class="sh-card sh-section-top">
         <?php if ( ! $table_exists ) : ?>
             <div class="sh-card-body">

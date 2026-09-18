@@ -21,7 +21,7 @@ This happens automatically and silently. SecureHold WP does not currently send a
 
 ## Why Does Stripe Do This?
 
-This is a Stripe platform rule, not a SecureHold WP limitation. Stripe (and the card networks behind it: Visa, Mastercard, etc.) set a maximum window for pre-authorization holds to protect cardholders. After this window, the reservation expires and the card issuer releases the funds.
+This is a Stripe platform rule, not a SecureHold WP limitation. Stripe (and the card networks behind it — Visa, Mastercard, etc.) set a maximum window for pre-authorization holds to protect cardholders. After this window, the reservation expires and the card issuer releases the funds.
 
 **SecureHold WP cannot extend this window.** The 7-day limit is enforced by Stripe and by your customer's bank.
 
@@ -67,7 +67,7 @@ Each deposit detail page shows the authorization date. Count 7 days from that da
 If a hold expired before you could capture it:
 
 1. The funds cannot be recovered through that hold. It is gone.
-2. You may create a new manual hold on the order, but this requires the customer's payment method to still be saved and reusable. Go to the WooCommerce order and use the **Create Hold** option in the SecureHold WP metabox.
+2. You may create a new manual hold on the order — but this requires the customer's payment method to still be saved and reusable. Go to the WooCommerce order and use the **Create Hold** option in the SecureHold WP metabox.
 3. If the payment method is no longer available, you will need to collect a new payment from the customer through other means.
 
 This is why it is critical to act within the 7-day window. Expired holds cannot be reactivated.

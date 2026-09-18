@@ -12,14 +12,94 @@ if (!class_exists('Securehold_Product_Settings')) {
     }
 }
 
-// Helper: returns true when $value starts with one of the allowed $prefixes.
-function securehold_validate_stripe_key( $value, array $prefixes ) {
-    foreach ( $prefixes as $prefix ) {
-        if ( strncmp( $value, $prefix, strlen( $prefix ) ) === 0 ) {
-            return true;
-        }
+// securehold_validate_stripe_key() now lives in includes/helpers.php so the
+// Setup Wizard validates against the same rules as this page.
+
+/**
+ * Normalize a raw tab slug against the same backward-compatibility aliases
+ * used for the page's own ?tab= GET parameter. Shared by the save handler
+ * (validating the submitted "return to" tab) and the page render below, so
+ * the two can never drift apart.
+ *
+ * @param string $tab Raw tab slug (already sanitize_text_field()'d).
+ * @return string Normalized tab slug.
+ */
+function securehold_normalize_settings_tab( $tab ) {
+    if ( $tab === 'product-rules' ) {
+        return 'rule-engine-products';
     }
-    return false;
+    if ( in_array( $tab, array( 'automation', 'deposits' ), true ) ) {
+        return 'rule-engine-global';
+    }
+    return $tab;
+}
+
+// Resolve the active tab and the tab/sub-tab nav definitions up front — the
+// save handler below needs both to validate the "return to" tab it redirects
+// to after a successful save (see securehold_active_tab hidden field in the
+// form further down).
+$active_tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : 'connection';
+$active_tab = securehold_normalize_settings_tab( $active_tab );
+
+/**
+ * Base tab definitions for the Settings page.
+ * PRO extends this array via the securehold_settings_tabs filter.
+ *
+ * Array structure per entry:
+ *   'label'       => string  (translated display label)
+ *   'icon'        => string  (dashicons class, e.g. 'dashicons-admin-network')
+ *   'active_keys' => array   (tab slug values that should mark this tab as active)
+ *
+ * @since 4.5.0
+ */
+$base_tabs = array(
+    'connection'    => array(
+        'label'       => __( 'Connection', 'securehold-security-deposit-holds' ),
+        'icon'        => 'dashicons-admin-network',
+        'active_keys' => array( 'connection' ),
+    ),
+    'rule-engine'   => array(
+        'label'       => __( 'Deposit Rules', 'securehold-security-deposit-holds' ),
+        'icon'        => 'dashicons-networking',
+        'active_keys' => array( 'rule-engine', 'rule-engine-global', 'rule-engine-products', 'rule-engine-categories' ),
+    ),
+    'notifications' => array(
+        'label'       => __( 'Notifications', 'securehold-security-deposit-holds' ),
+        'icon'        => 'dashicons-email',
+        'active_keys' => array( 'notifications' ),
+    ),
+    'frontend'      => array(
+        'label'       => __( 'Appearance & Frontend', 'securehold-security-deposit-holds' ),
+        'icon'        => 'dashicons-admin-appearance',
+        'active_keys' => array( 'frontend' ),
+    ),
+);
+
+/**
+ * Filter the Settings page tab definitions.
+ *
+ * PRO uses this to inject additional tabs (Rules, Automation, etc.)
+ * into the nav before it is rendered. Each entry must follow the
+ * same structure as the base tabs above.
+ *
+ * @since 4.5.0
+ * @param array  $tabs        Associative array of tab definitions keyed by tab slug.
+ * @param string $active_tab  Currently active tab key.
+ */
+$tabs = apply_filters( 'securehold_settings_tabs', $base_tabs, $active_tab );
+
+/**
+ * Every tab/sub-tab slug a user could legitimately land on, flattened from
+ * $tabs' active_keys (includes anything PRO injects via the filter above).
+ * The save handler whitelists the "return to" tab against this — never
+ * against raw, unchecked POST input — so a save can only ever redirect back
+ * into the Settings page itself.
+ */
+$sh_valid_settings_tabs = array();
+foreach ( $tabs as $sh_tab_def ) {
+    if ( ! empty( $sh_tab_def['active_keys'] ) && is_array( $sh_tab_def['active_keys'] ) ) {
+        $sh_valid_settings_tabs = array_merge( $sh_valid_settings_tabs, $sh_tab_def['active_keys'] );
+    }
 }
 
 // SAVE SETTINGS HANDLER
@@ -175,6 +255,12 @@ if (isset($_POST['securehold_settings_nonce']) && wp_verify_nonce(sanitize_text_
             'securehold_require_deposit_auth',
             isset( $_POST['securehold_require_deposit_auth'] ) ? '1' : ''
         );
+
+        // MagePeople compatibility bridge (checkbox — opt-in, default: disabled).
+        update_option(
+            'securehold_magepeople_deposit_enabled',
+            isset( $_POST['securehold_magepeople_deposit_enabled'] ) ? 'yes' : 'no'
+        );
     }
 
     // Debug logging toggle (checkbox — only update when Connection tab is submitted;
@@ -189,6 +275,24 @@ if (isset($_POST['securehold_settings_nonce']) && wp_verify_nonce(sanitize_text_
             array( 'value' => $logging_value ),
             'debug'
         );
+
+        // Usage telemetry toggle — routed through Securehold_Wp_Telemetry so
+        // opting in from Settings creates the site id and sends the first
+        // heartbeat exactly like the notice's "Allow usage tracking" button,
+        // and opting out unschedules the next heartbeat immediately. Only
+        // acted on when the value actually changes, so re-saving this tab
+        // with the box already in its current state never re-sends a
+        // heartbeat or resets telemetry_enabled_at.
+        $telemetry_was_enabled = ( get_option( 'securehold_telemetry_enabled', 'no' ) === 'yes' );
+        $telemetry_now_enabled = isset( $_POST['securehold_telemetry_enabled'] );
+        if ( class_exists( 'Securehold_Wp_Telemetry' ) && $telemetry_now_enabled !== $telemetry_was_enabled ) {
+            $telemetry = new Securehold_Wp_Telemetry();
+            if ( $telemetry_now_enabled ) {
+                $telemetry->opt_in();
+            } else {
+                $telemetry->opt_out();
+            }
+        }
     }
 
     // ── Appearance & Frontend tab ──
@@ -239,7 +343,20 @@ if (isset($_POST['securehold_settings_nonce']) && wp_verify_nonce(sanitize_text_
         }
     }
 
-    $redirect_url = add_query_arg('settings-updated', 'true', wp_get_referer() ?: admin_url('admin.php?page=securehold-settings'));
+    // Return to the exact tab/sub-tab the user saved from, instead of relying
+    // on the browser's Referer header (wp_get_referer()), which is absent
+    // whenever a privacy extension, proxy, or non-standard submission strips
+    // it — silently bouncing the user back to Connection. The submitted value
+    // is whitelisted against $sh_valid_settings_tabs (built above from the
+    // same $tabs the nav renders), never redirected to unchecked.
+    $submitted_tab = isset( $_POST['securehold_active_tab'] ) ? sanitize_text_field( wp_unslash( $_POST['securehold_active_tab'] ) ) : '';
+    $submitted_tab = securehold_normalize_settings_tab( $submitted_tab );
+    $redirect_tab  = in_array( $submitted_tab, $sh_valid_settings_tabs, true ) ? $submitted_tab : 'connection';
+
+    $redirect_url = add_query_arg(
+        array( 'tab' => $redirect_tab, 'settings-updated' => 'true' ),
+        admin_url( 'admin.php?page=securehold-settings' )
+    );
     wp_safe_redirect($redirect_url);
     exit;
 }
@@ -308,69 +425,8 @@ if ($stripe_mode === 'test' && !empty($test_publishable) && !empty($test_secret)
 elseif ($stripe_mode === 'live' && !empty($live_publishable) && !empty($live_secret)) $stripe_status = 'live';
 
 $webhook_url = get_rest_url(null, 'securehold/v1/webhook');
-$active_tab = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'connection';
-
-// Backward compatibility: redirect old tabs to rule engine
-if ( $active_tab === 'product-rules' ) {
-    $active_tab = 'rule-engine-products';
-}
-if ( in_array( $active_tab, array( 'automation', 'deposits' ), true ) ) {
-    $active_tab = 'rule-engine-global';
-}
-// FREE fallback: Product/Category Rules sub-tabs are PRO-only. When PRO is not
-// active, redirect those sub-tab keys to the Global Configuration sub-tab so a
-// direct URL never lands on an empty page. PRO keeps its own routing.
-if ( in_array( $active_tab, array( 'rule-engine-products', 'rule-engine-categories' ), true )
-     && ! securehold_rule_engine_enabled() ) {
-    $active_tab = 'rule-engine-global';
-}
-
-/**
- * Base tab definitions for the Settings page.
- * PRO extends this array via the securehold_settings_tabs filter.
- *
- * Array structure per entry:
- *   'label'       => string  (translated display label)
- *   'icon'        => string  (dashicons class, e.g. 'dashicons-admin-network')
- *   'active_keys' => array   (tab slug values that should mark this tab as active)
- *
- * @since 4.5.0
- */
-$base_tabs = array(
-    'connection'    => array(
-        'label'       => __( 'Connection', 'securehold-security-deposit-holds' ),
-        'icon'        => 'dashicons-admin-network',
-        'active_keys' => array( 'connection' ),
-    ),
-    'rule-engine'   => array(
-        'label'       => __( 'Deposit Rules', 'securehold-security-deposit-holds' ),
-        'icon'        => 'dashicons-networking',
-        'active_keys' => array( 'rule-engine', 'rule-engine-global', 'rule-engine-products', 'rule-engine-categories' ),
-    ),
-    'notifications' => array(
-        'label'       => __( 'Notifications', 'securehold-security-deposit-holds' ),
-        'icon'        => 'dashicons-email',
-        'active_keys' => array( 'notifications' ),
-    ),
-    'frontend'      => array(
-        'label'       => __( 'Appearance & Frontend', 'securehold-security-deposit-holds' ),
-        'icon'        => 'dashicons-admin-appearance',
-        'active_keys' => array( 'frontend' ),
-    ),
-);
-
-/**
- * Filter the Settings page tab definitions.
- *
- * PRO uses this to inject additional tabs (Rules, Automation, etc.)
- * into the nav before it is rendered. Each entry must follow the
- * same structure as the base tabs above.
- *
- * @since 4.5.0
- * @param array  $tabs        Associative array of tab definitions keyed by tab slug.
- * @param string $active_tab  Currently active tab key.
- */
-$tabs = apply_filters( 'securehold_settings_tabs', $base_tabs, $active_tab );
+// $active_tab and $tabs are resolved near the top of this file (before the
+// save handler, which needs them to validate the "return to" tab).
 ?>
 
 <div class="wrap securehold-wrapper securehold-tab-<?php echo esc_attr($active_tab); ?>">
@@ -454,7 +510,8 @@ $tabs = apply_filters( 'securehold_settings_tabs', $base_tabs, $active_tab );
 
     <form method="post" action="" id="securehold-settings-form">
         <?php wp_nonce_field('securehold_save_settings', 'securehold_settings_nonce'); ?>
-        
+        <input type="hidden" name="securehold_active_tab" value="<?php echo esc_attr( $active_tab ); ?>">
+
         <div class="sh-settings-grid">
             
             <div class="sh-settings-main">
@@ -590,6 +647,18 @@ $tabs = apply_filters( 'securehold_settings_tabs', $base_tabs, $active_tab );
                                     <?php esc_html_e('When enabled, SecureHold logs detailed technical information (Layer 1/2/3 injection details, Stripe request args, hook names). When disabled, only essential events (hold created, hold failed, warnings, errors) are logged. Errors and warnings are always logged regardless of this setting.', 'securehold-security-deposit-holds'); ?>
                                 </p>
                             </div>
+
+                            <div class="sh-divider-gradient"></div>
+                            <h3 style="margin-top:0;"><?php esc_html_e( 'Privacy', 'securehold-security-deposit-holds' ); ?></h3>
+                            <div class="sh-input-field">
+                                <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                                    <input type="checkbox" name="securehold_telemetry_enabled" value="yes" <?php checked( get_option( 'securehold_telemetry_enabled', 'no' ), 'yes' ); ?>>
+                                    <strong><?php esc_html_e( 'Share usage data', 'securehold-security-deposit-holds' ); ?></strong>
+                                </label>
+                                <p class="description" style="margin-top:0.5rem;">
+                                    <?php esc_html_e( 'Sends a small, pseudonymous, daily check-in to secureholdwp.com: SecureHold/WordPress/WooCommerce versions, whether Stripe looks configured, and whether a deposit hold has ever been created — never a domain, email, order, key, or customer data. Off by default; turning this off stops all future check-ins immediately.', 'securehold-security-deposit-holds' ); ?>
+                                </p>
+                            </div>
                         </div>
                    </div>
                 <?php endif; ?>
@@ -656,6 +725,10 @@ $tabs = apply_filters( 'securehold_settings_tabs', $base_tabs, $active_tab );
                     if ( $rule_sub === 'rule-engine' ) {
                         $rule_sub = 'rule-engine-global';
                     }
+                    // True when the current sub-tab is a locked PRO preview (no
+                    // fields to save) — used below to hide the Save Settings button.
+                    $sh_rule_preview_locked = in_array( $rule_sub, array( 'rule-engine-products', 'rule-engine-categories' ), true )
+                        && ! securehold_rule_engine_enabled();
                     ?>
 
                     <!-- Sub-tabs navigation -->
@@ -664,16 +737,16 @@ $tabs = apply_filters( 'securehold_settings_tabs', $base_tabs, $active_tab );
                             <span class="dashicons dashicons-admin-settings"></span>
                             <?php esc_html_e( 'Global Configuration', 'securehold-security-deposit-holds' ); ?>
                         </a>
-                        <?php if ( securehold_rule_engine_enabled() ) : ?>
                         <a href="?page=securehold-settings&tab=rule-engine-products" class="sh-subtab-link <?php echo $rule_sub === 'rule-engine-products' ? 'active' : ''; ?>">
                             <span class="dashicons dashicons-products"></span>
                             <?php esc_html_e( 'Product Rules', 'securehold-security-deposit-holds' ); ?>
+                            <?php if ( ! securehold_rule_engine_enabled() ) : ?><span class="sh-pro-badge"><?php esc_html_e( 'PRO', 'securehold-security-deposit-holds' ); ?></span><?php endif; ?>
                         </a>
                         <a href="?page=securehold-settings&tab=rule-engine-categories" class="sh-subtab-link <?php echo $rule_sub === 'rule-engine-categories' ? 'active' : ''; ?>">
                             <span class="dashicons dashicons-category"></span>
                             <?php esc_html_e( 'Category Rules', 'securehold-security-deposit-holds' ); ?>
+                            <?php if ( ! securehold_rule_engine_enabled() ) : ?><span class="sh-pro-badge"><?php esc_html_e( 'PRO', 'securehold-security-deposit-holds' ); ?></span><?php endif; ?>
                         </a>
-                        <?php endif; ?>
                         <button type="button" class="sh-subtab-link sh-clause-modal-trigger"
                                 aria-haspopup="dialog" aria-controls="sh-clause-modal"
                                 style="margin-left:auto;">
@@ -723,10 +796,32 @@ $tabs = apply_filters( 'securehold_settings_tabs', $base_tabs, $active_tab );
                     <?php if ( $rule_sub === 'rule-engine-global' ) : ?>
                         <!-- Global Configuration sub-tab -->
                         <?php include plugin_dir_path( __FILE__ ) . 'rule-engine-global-tab.php'; ?>
-                    <?php elseif ( $rule_sub === 'rule-engine-products' && securehold_rule_engine_enabled() ) : ?>
-                        <!-- Product Rules: rendered by PRO via securehold_settings_tab_content. -->
-                    <?php elseif ( $rule_sub === 'rule-engine-categories' && securehold_rule_engine_enabled() ) : ?>
-                        <!-- Category Rules: rendered by PRO via securehold_settings_tab_content. -->
+                    <?php elseif ( $rule_sub === 'rule-engine-products' ) : ?>
+                        <?php if ( securehold_rule_engine_enabled() ) : ?>
+                            <!-- Product Rules: rendered by PRO via securehold_settings_tab_content. -->
+                        <?php else : ?>
+                            <?php
+                            // FREE preview only — no PRO logic, no settings read or saved.
+                            $sh_locked_title       = __( 'Product Rules', 'securehold-security-deposit-holds' );
+                            $sh_locked_description = __( 'Set a different deposit amount, or exclude a product entirely, on a per-product basis — instead of one rule for the whole store.', 'securehold-security-deposit-holds' );
+                            $sh_locked_icon        = 'dashicons-products';
+                            include plugin_dir_path( __FILE__ ) . 'partials/pro-locked-panel.php';
+                            unset( $sh_locked_title, $sh_locked_description, $sh_locked_icon );
+                            ?>
+                        <?php endif; ?>
+                    <?php elseif ( $rule_sub === 'rule-engine-categories' ) : ?>
+                        <?php if ( securehold_rule_engine_enabled() ) : ?>
+                            <!-- Category Rules: rendered by PRO via securehold_settings_tab_content. -->
+                        <?php else : ?>
+                            <?php
+                            // FREE preview only — no PRO logic, no settings read or saved.
+                            $sh_locked_title       = __( 'Category Rules', 'securehold-security-deposit-holds' );
+                            $sh_locked_description = __( 'Set a different deposit amount for every product category, instead of a single global rule.', 'securehold-security-deposit-holds' );
+                            $sh_locked_icon        = 'dashicons-category';
+                            include plugin_dir_path( __FILE__ ) . 'partials/pro-locked-panel.php';
+                            unset( $sh_locked_title, $sh_locked_description, $sh_locked_icon );
+                            ?>
+                        <?php endif; ?>
                     <?php endif; ?>
 
                 <?php endif; ?>
@@ -752,8 +847,34 @@ $tabs = apply_filters( 'securehold_settings_tabs', $base_tabs, $active_tab );
                 do_action( 'securehold_settings_tab_content', $active_tab );
                 ?>
 
+                <?php
+                /**
+                 * Email Branding PRO preview — FREE fallback only.
+                 *
+                 * PRO hooks 'securehold_settings_tab_content' above to render its real
+                 * Email Branding section whenever it is active (self-gated on
+                 * $active_tab === 'notifications', no separate feature flag). Checking
+                 * has_action() here — instead of a new feature flag — avoids ever
+                 * showing this preview alongside the real PRO UI.
+                 */
+                if ( 'notifications' === $active_tab && ! has_action( 'securehold_settings_tab_content' ) ) :
+                    ?>
+                    <div class="sh-card">
+                        <div class="sh-locked-feature sh-locked-feature--compact">
+                            <span class="dashicons dashicons-art sh-locked-feature__icon" aria-hidden="true" style="font-size:1.75rem;width:1.75rem;height:1.75rem;"></span>
+                            <h3 style="font-size:1rem;">
+                                <?php esc_html_e( 'Email Branding', 'securehold-security-deposit-holds' ); ?>
+                                <span class="sh-pro-badge"><?php esc_html_e( 'PRO', 'securehold-security-deposit-holds' ); ?></span>
+                            </h3>
+                            <p><?php esc_html_e( 'Add your logo and brand colors to every SecureHold email, on top of the templates above.', 'securehold-security-deposit-holds' ); ?></p>
+                            <a href="<?php echo esc_url( SECUREHOLD_WP_URL_PRICING ); ?>" target="_blank" rel="noopener noreferrer" class="sh-btn sh-btn-secondary sh-btn-sm">
+                                <?php esc_html_e( 'Learn More', 'securehold-security-deposit-holds' ); ?>
+                            </a>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
-                <?php if ( $active_tab !== 'notifications' ) : ?>
+                <?php if ( $active_tab !== 'notifications' && empty( $sh_rule_preview_locked ) ) : ?>
                 <div class="sh-card" style="margin-top: 2rem; background: transparent; box-shadow: none; border: none; padding: 0; display: flex; justify-content: flex-end;">
                     <button type="submit" id="sh-save-settings-btn" class="sh-btn sh-btn-primary sh-btn-lg" style="padding: 0.75rem 2rem; font-size: 1rem;">
                         <span class="dashicons dashicons-saved" style="margin-right: 8px;"></span>
@@ -850,6 +971,16 @@ $tabs = apply_filters( 'securehold_settings_tabs', $base_tabs, $active_tab );
                             </h2>
                         </div>
                         <div class="sh-card-body" style="padding:1.25rem;">
+
+                            <?php if ( ! securehold_feature_enabled( 'tools' ) ) : ?>
+                            <!-- FREE preview only — informational note, no PRO logic, no second simulator. -->
+                            <p class="sh-card-hint" style="margin:0 0 1rem;">
+                                <span class="sh-pro-badge"><?php esc_html_e( 'PRO', 'securehold-security-deposit-holds' ); ?></span>
+                                <?php esc_html_e( 'Advanced simulation', 'securehold-security-deposit-holds' ); ?>
+                                &mdash;
+                                <?php esc_html_e( 'simulate a full multi-product cart in SecureHold PRO.', 'securehold-security-deposit-holds' ); ?>
+                            </p>
+                            <?php endif; ?>
 
                             <!-- Product Search (Add to Cart) -->
                             <div class="sh-sim-section">

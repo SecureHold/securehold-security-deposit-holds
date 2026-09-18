@@ -231,7 +231,10 @@ class Securehold_Email_Manager {
     public static function migrate_legacy_settings() {
         // ── Guard: already ran ────────────────────────────────────────
         if ( get_option( 'securehold_email_migrated_to_wc_v5' ) ) {
-            self::debug_log( 'migrate_legacy_settings: skipped (flag already set)', array(), 'debug' );
+            // No log here. This runs on every admin_init, and the one-time
+            // migration is done on all but the first: recording "nothing to do"
+            // hundreds of times a day is what pushed the real Stripe errors out
+            // of the support bundle's export window.
             return;
         }
 

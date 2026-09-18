@@ -139,31 +139,238 @@ class Securehold_Setup_Wizard {
      * Save Stripe API keys
      */
     private function save_stripe_keys() {
-        $mode             = sanitize_text_field( wp_unslash( $_POST['stripe_mode'] ) );
-        $test_publishable = sanitize_text_field( wp_unslash( $_POST['test_publishable_key'] ) );
-        $test_secret      = sanitize_text_field( wp_unslash( $_POST['test_secret_key'] ) );
-        $live_publishable = sanitize_text_field( wp_unslash( $_POST['live_publishable_key'] ) );
-        $live_secret      = sanitize_text_field( wp_unslash( $_POST['live_secret_key'] ) );
-        
-        // Save in SecureHold options
-        update_option('securehold_stripe_mode', $mode);
-        update_option('securehold_stripe_test_publishable_key', $test_publishable);
-        update_option('securehold_stripe_test_secret_key', $test_secret);
-        update_option('securehold_stripe_live_publishable_key', $live_publishable);
-        update_option('securehold_stripe_live_secret_key', $live_secret);
-        
+
+        $post = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- verified in handle_wizard_actions()
+
+        $mode = ( isset( $post['stripe_mode'] ) && sanitize_text_field( $post['stripe_mode'] ) === 'live' ) ? 'live' : 'test';
+
+        $submitted = array(
+            'securehold_stripe_test_publishable_key' => isset( $post['test_publishable_key'] ) ? trim( sanitize_text_field( $post['test_publishable_key'] ) ) : '',
+            'securehold_stripe_test_secret_key'      => isset( $post['test_secret_key'] ) ? trim( sanitize_text_field( $post['test_secret_key'] ) ) : '',
+            'securehold_stripe_live_publishable_key' => isset( $post['live_publishable_key'] ) ? trim( sanitize_text_field( $post['live_publishable_key'] ) ) : '',
+            'securehold_stripe_live_secret_key'      => isset( $post['live_secret_key'] ) ? trim( sanitize_text_field( $post['live_secret_key'] ) ) : '',
+        );
+
+        $test_prefixes = securehold_stripe_key_prefixes( 'test' );
+        $live_prefixes = securehold_stripe_key_prefixes( 'live' );
+
+        $rules = array(
+            'securehold_stripe_test_publishable_key' => array( __( 'Test Publishable Key', 'securehold-security-deposit-holds' ), $test_prefixes['publishable'], 'test' ),
+            'securehold_stripe_test_secret_key'      => array( __( 'Test Secret Key', 'securehold-security-deposit-holds' ),      $test_prefixes['secret'],      'test' ),
+            'securehold_stripe_live_publishable_key' => array( __( 'Live Publishable Key', 'securehold-security-deposit-holds' ), $live_prefixes['publishable'], 'live' ),
+            'securehold_stripe_live_secret_key'      => array( __( 'Live Secret Key', 'securehold-security-deposit-holds' ),      $live_prefixes['secret'],      'live' ),
+        );
+
+        // ── Format check ──
+        // An empty field keeps whatever is stored, so the form never has to echo a
+        // secret back into the page just to survive a re-save.
+        $errors  = array();
+        $to_save = array();
+
+        foreach ( $rules as $option => $rule ) {
+            list( $label, $prefixes, $key_mode ) = $rule;
+            $value = $submitted[ $option ];
+
+            if ( $value === '' ) {
+                if ( $key_mode === $mode && ! get_option( $option, '' ) ) {
+                    /* translators: %s is a field label such as "Test Secret Key" */
+                    $errors[] = sprintf( __( '%s is required for the selected mode.', 'securehold-security-deposit-holds' ), $label );
+                }
+                continue;
+            }
+
+            if ( ! securehold_validate_stripe_key( $value, $prefixes ) ) {
+                // The rejected value is never echoed back — only the expected shape.
+                $errors[] = sprintf(
+                    /* translators: 1: field label, 2: comma-separated valid key prefixes */
+                    __( '%1$s: value rejected — must start with %2$s.', 'securehold-security-deposit-holds' ),
+                    $label,
+                    implode( ' ' . __( 'or', 'securehold-security-deposit-holds' ) . ' ', $prefixes )
+                );
+                continue;
+            }
+
+            $to_save[ $option ] = $value;
+        }
+
+        if ( ! empty( $errors ) ) {
+            self::set_wizard_notice( 'error', __( 'Stripe keys were not saved.', 'securehold-security-deposit-holds' ), $errors );
+            wp_safe_redirect( admin_url( 'admin.php?page=securehold-setup-wizard&step=5' ) );
+            exit;
+        }
+
+        // ── Persist ──
+        update_option( 'securehold_stripe_mode', $mode );
+
+        foreach ( $to_save as $option => $value ) {
+            update_option( $option, $value );
+        }
+
         // SecureHold stores its own Stripe credentials independently.
         // The WooCommerce Stripe gateway (woocommerce_stripe_settings) is configured separately
         // by the merchant in WooCommerce > Settings > Payments. SecureHold does not overwrite it
         // to prevent credential divergence after key rotation and to avoid breaking the WC Stripe
         // checkout gateway if merchants use it alongside SecureHold.
 
-        add_settings_error('securehold_wizard', 'keys_saved', __('Stripe keys saved successfully!', 'securehold-security-deposit-holds'), 'success');
-        
-        // Use wp_safe_redirect with admin_url to ensure the redirect lands on step 6.
-        wp_safe_redirect( admin_url( 'admin.php?page=securehold-setup-wizard&step=6' ) );
+        // ── Verify against Stripe, and against what WooCommerce actually uses ──
+        // Saving proves nothing on its own: this step used to report success for
+        // any string a merchant pasted, including a key belonging to a different
+        // Stripe account or test environment.
+        $notice = self::diagnose_saved_credentials();
+
+        self::set_wizard_notice( $notice['type'], $notice['message'], $notice['details'] );
+
+        // Rejected credentials keep the merchant on this step — there is nothing
+        // useful to configure further until they are fixed. Every other verdict,
+        // including "cannot verify yet", is informational and lets setup proceed.
+        $next_step = ( $notice['blocking'] ) ? 5 : 6;
+
+        wp_safe_redirect( admin_url( 'admin.php?page=securehold-setup-wizard&step=' . $next_step ) );
         exit;
-    }    
+    }
+
+    /**
+     * Run the Stripe context diagnosis and phrase it for the wizard.
+     *
+     * @since 3.4.4
+     *
+     * @return array type, message, details, blocking.
+     */
+    private static function diagnose_saved_credentials() {
+
+        if ( ! class_exists( 'Securehold_Stripe_Context' ) && defined( 'SECUREHOLD_PLUGIN_DIR' ) ) {
+            require_once SECUREHOLD_PLUGIN_DIR . 'includes/stripe/class-securehold-wp-stripe-context.php';
+        }
+
+        if ( ! class_exists( 'Securehold_Stripe_Context' ) ) {
+            return array(
+                'type'     => 'warning',
+                'message'  => __( 'Stripe keys saved. SecureHold could not run its verification on this site.', 'securehold-security-deposit-holds' ),
+                'details'  => array(),
+                'blocking' => false,
+            );
+        }
+
+        // The credentials just changed; never report a verdict computed for the
+        // old ones. The webhook diagnosis is keyed to the credentials too, and a
+        // rotation is exactly when its previous answer becomes misleading.
+        Securehold_Stripe_Context::flush();
+
+        if ( ! class_exists( 'Securehold_Webhook_Configurator' ) && defined( 'SECUREHOLD_PLUGIN_DIR' ) ) {
+            require_once SECUREHOLD_PLUGIN_DIR . 'includes/class-securehold-wp-webhook-configurator.php';
+        }
+        if ( class_exists( 'Securehold_Webhook_Configurator' ) ) {
+            Securehold_Webhook_Configurator::flush_status();
+        }
+        $context = Securehold_Stripe_Context::get( true );
+
+        switch ( $context['status'] ) {
+
+            case Securehold_Stripe_Context::STATUS_INVALID_CREDENTIALS:
+                return array(
+                    'type'     => 'error',
+                    'message'  => __( 'Stripe authentication failed: the secret key you entered was rejected by Stripe. Check that you copied the whole key, from the Stripe environment you intend to use.', 'securehold-security-deposit-holds' ),
+                    'details'  => array(),
+                    'blocking' => true,
+                );
+
+            case Securehold_Stripe_Context::STATUS_MODE_MISMATCH:
+                return array(
+                    'type'    => 'error',
+                    'message' => sprintf(
+                        /* translators: 1: SecureHold mode, 2: WooCommerce Stripe mode */
+                        __( 'Stripe keys saved, but SecureHold is in %1$s mode while the WooCommerce Stripe Gateway is in %2$s mode. Security deposits cannot be created until both use the same mode.', 'securehold-security-deposit-holds' ),
+                        ucfirst( (string) $context['mode']['securehold'] ),
+                        ucfirst( (string) $context['mode']['woocommerce'] )
+                    ),
+                    'details'  => array(),
+                    'blocking' => false,
+                );
+
+            case Securehold_Stripe_Context::STATUS_ACCOUNT_MISMATCH:
+                return array(
+                    'type'    => 'error',
+                    'message' => __( 'Your SecureHold Stripe credentials are valid, but they do not match the Stripe context used by WooCommerce Stripe.', 'securehold-security-deposit-holds' ),
+                    'details' => array(
+                        sprintf(
+                            /* translators: 1: SecureHold Stripe account id, 2: WooCommerce Stripe account id */
+                            __( 'SecureHold is connected to %1$s while WooCommerce is connected to %2$s. Security deposits will fail, because the payment does not exist in SecureHold\'s account.', 'securehold-security-deposit-holds' ),
+                            $context['accounts']['securehold'],
+                            $context['accounts']['woocommerce']
+                        ),
+                    ),
+                    'blocking' => false,
+                );
+
+            case Securehold_Stripe_Context::STATUS_CONTEXT_INCOMPATIBLE:
+                return array(
+                    'type'    => 'error',
+                    'message' => __( 'Your SecureHold Stripe credentials are valid, but they do not appear to match the Stripe context used by WooCommerce Stripe.', 'securehold-security-deposit-holds' ),
+                    'details' => array(
+                        sprintf(
+                            /* translators: %s is a WooCommerce order number */
+                            __( 'The payment on order #%s is not visible with these keys. This usually means they come from a different Stripe test environment or sandbox than the one WooCommerce is connected to.', 'securehold-security-deposit-holds' ),
+                            $context['probe']['order_id']
+                        ),
+                        __( 'Open the Stripe environment where that payment appears, and copy the API keys from there.', 'securehold-security-deposit-holds' ),
+                    ),
+                    'blocking' => false,
+                );
+
+            case Securehold_Stripe_Context::STATUS_COMPATIBLE:
+                return array(
+                    'type'    => 'success',
+                    'message' => sprintf(
+                        /* translators: %s is a WooCommerce order number */
+                        __( 'Stripe credentials are valid and match the Stripe context used by WooCommerce Stripe (verified against order #%s).', 'securehold-security-deposit-holds' ),
+                        $context['probe']['order_id']
+                    ),
+                    'details'  => array(),
+                    'blocking' => false,
+                );
+
+            default:
+                // Valid credentials, verdict pending. Deliberately not dressed up as
+                // a clean bill of health, and deliberately not an error either.
+                $message = in_array( 'no_stripe_orders', $context['notes'], true )
+                    ? __( 'Stripe credentials are valid. SecureHold could not yet verify compatibility with WooCommerce Stripe because no recent WooCommerce Stripe payment is available. No problem has been detected — this check will complete on its own after the first Stripe payment.', 'securehold-security-deposit-holds' )
+                    : __( 'Stripe credentials are valid. SecureHold could not complete the compatibility check with WooCommerce Stripe right now. No problem has been detected — you can re-run the check from SecureHold → Health Check.', 'securehold-security-deposit-holds' );
+
+                return array(
+                    'type'     => 'warning',
+                    'message'  => $message,
+                    'details'  => array(),
+                    'blocking' => false,
+                );
+        }
+    }
+
+    /**
+     * Stash a notice that survives the post-redirect-get cycle.
+     *
+     * add_settings_error() cannot: this handler redirects, which discarded the
+     * message the wizard used to raise here. Mirrors the transient pattern the
+     * settings page already uses.
+     *
+     * @since 3.4.4
+     *
+     * @param string $type    success|warning|error.
+     * @param string $message Main sentence.
+     * @param array  $details Optional supporting lines.
+     * @return void
+     */
+    private static function set_wizard_notice( $type, $message, $details = array() ) {
+        set_transient(
+            'securehold_wizard_stripe_notice_' . get_current_user_id(),
+            array(
+                'type'    => (string) $type,
+                'message' => (string) $message,
+                'details' => array_values( (array) $details ),
+            ),
+            120
+        );
+    }
+
     /**
      * Auto-configure webhook
      */

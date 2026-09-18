@@ -10,7 +10,33 @@ $current_step = isset($_GET['step']) ? intval($_GET['step']) : 1;
 $total_steps = count($steps);
 
 settings_errors('securehold_wizard');
+
+// Stripe credential verdict from the API Keys step. Stored in a transient
+// because that handler redirects, which discards add_settings_error().
+$securehold_stripe_notice = get_transient( 'securehold_wizard_stripe_notice_' . get_current_user_id() );
+if ( is_array( $securehold_stripe_notice ) ) {
+    delete_transient( 'securehold_wizard_stripe_notice_' . get_current_user_id() );
+} else {
+    $securehold_stripe_notice = null;
+}
 ?>
+
+<?php if ( $securehold_stripe_notice ) :
+    $sh_notice_class = in_array( $securehold_stripe_notice['type'], array( 'success', 'warning', 'error' ), true )
+        ? 'notice-' . $securehold_stripe_notice['type']
+        : 'notice-info';
+    ?>
+    <div class="notice <?php echo esc_attr( $sh_notice_class ); ?>" style="margin: 1rem 0;">
+        <p><strong><?php echo esc_html( $securehold_stripe_notice['message'] ); ?></strong></p>
+        <?php if ( ! empty( $securehold_stripe_notice['details'] ) ) : ?>
+            <ul style="margin: 0 0 1em 1.5em; list-style: disc;">
+                <?php foreach ( $securehold_stripe_notice['details'] as $sh_notice_detail ) : ?>
+                    <li><?php echo esc_html( $sh_notice_detail ); ?></li>
+                <?php endforeach; ?>
+            </ul>
+        <?php endif; ?>
+    </div>
+<?php endif; ?>
 
 <div class="wrap securehold-wrapper securehold-setup-wizard">
     

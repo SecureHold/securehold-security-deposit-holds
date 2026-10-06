@@ -60,9 +60,15 @@ SecureHold never charges anything at checkout. If you're looking for a plugin th
 **Day-to-day management**
 
 * Capture any amount up to what was authorized, or release the hold
-* Deposits list and detail view with a detailed status timeline
+* Deposits list and detail view with a detailed status timeline and the configuration applied to each hold
 * WooCommerce order integration (metabox actions)
 * Customer-facing "My Deposits" page in My Account
+
+**Integrations**
+
+* Settings > Integrations shows what SecureHold works with and the status of each integration
+* Optional Booking and Rental Manager (MagePeople) bridge: reuse a rent item's fixed security deposit amount (opt-in, fixed amounts only)
+* Booking Activities: coming soon, not available yet
 
 **Automation**
 
@@ -82,6 +88,7 @@ SecureHold never charges anything at checkout. If you're looking for a plugin th
 Upgrade to PRO to unlock:
 
 * Per-product and per-category deposit rules
+* WooCommerce Native Multi-Hold: one independent hold per eligible order item, each captured or released on its own (off by default, requires PRO)
 * Live rule simulator: preview which rule applies before checkout
 * Delayed, Scheduled, and By-Status timing strategies
 * Full email branding (logo, colors, footer text)
@@ -151,7 +158,7 @@ Yes, it's required. SecureHold builds on top of it to add holds. It doesn't repl
 
 = Does this work with WooCommerce Bookings or other booking plugins? =
 
-SecureHold works at the order level, so it fits most WooCommerce order flows, including bookings. We haven't tested every third-party booking plugin individually, so test your specific setup in Stripe test mode first.
+SecureHold works at the order level, so it fits most WooCommerce order flows, including bookings. We haven't tested every third-party booking plugin individually (a bridge for Booking and Rental Manager by MagePeople is included; Booking Activities is coming soon), so test your specific setup in Stripe test mode first.
 
 = Is it compatible with High-Performance Order Storage (HPOS)? =
 

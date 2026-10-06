@@ -59,7 +59,7 @@ SecureHold never charges anything at checkout. If you're looking for a plugin th
 
 **Day-to-day management**
 
-* Capture any amount up to what was authorized, or release the hold
+* Capture the full amount or part of it (up to what was authorized), or release the hold
 * Deposits list and detail view with a detailed status timeline and the configuration applied to each hold
 * WooCommerce order integration (metabox actions)
 * Customer-facing "My Deposits" page in My Account
@@ -88,7 +88,7 @@ SecureHold never charges anything at checkout. If you're looking for a plugin th
 Upgrade to PRO to unlock:
 
 * Per-product and per-category deposit rules
-* WooCommerce Native Multi-Hold: one independent hold per eligible order item, each captured or released on its own (off by default, requires PRO)
+* WooCommerce Native Multi-Hold: set Hold Structure to Multiple Hold Groups to place one independent hold per eligible order item, each captured or released on its own. Optional and off by default. Without PRO, SecureHold keeps a single hold per order (Per Item Aggregated adds the items into that one hold)
 * Live rule simulator: preview which rule applies before checkout
 * Delayed, Scheduled, and By-Status timing strategies
 * Full email branding (logo, colors, footer text)
@@ -276,17 +276,17 @@ When the plugin is deactivated, an optional feedback form appears in the WordPre
 
 = 3.4.9 =
 
-* Added: contextual, clearly-labeled previews of SecureHold PRO features in the FREE admin interface (Deposit Rules, Notifications, Tools, the deposit simulator, and Logs) — informational only, so FREE users can see what PRO adds without any PRO logic, settings, or interactive controls in FREE itself.
-* Added: optional integration with Booking and Rental Manager - MagePeople to reuse a Rent Item's fixed security deposit amount for SecureHold's own hold, and to prevent MagePeople from also adding that deposit to the WooCommerce payable total when enabled. Opt-in and disabled by default (Settings > Deposit Rules > Third-Party Compatibility). Fixed amounts only in this version — percentage-type MagePeople deposits are not supported and are safely ignored, falling back to your existing Category or Global deposit rules.
+* Added: contextual, clearly-labeled previews of SecureHold PRO features in the FREE admin interface (Deposit Rules, Notifications, Tools, the deposit simulator, and Logs), informational only, so FREE users can see what PRO adds without any PRO logic, settings, or interactive controls in FREE itself.
+* Added: optional integration with Booking and Rental Manager - MagePeople to reuse a Rent Item's fixed security deposit amount for SecureHold's own hold, and to prevent MagePeople from also adding that deposit to the WooCommerce payable total when enabled. Opt-in and disabled by default (Settings > Deposit Rules > Third-Party Compatibility). Fixed amounts only in this version; percentage-type MagePeople deposits are not supported and are safely ignored, falling back to your existing Category or Global deposit rules.
 
 = 3.4.8 =
 
-* Added: optional, privacy-conscious usage telemetry to help us understand real-world SecureHold usage and improve the plugin. Off by default — enable it from Connection settings ("Share usage data") if you'd like to help; you can turn it off again at any time. See External Services above for exactly what is and isn't sent.
+* Added: optional, privacy-conscious usage telemetry to help us understand real-world SecureHold usage and improve the plugin. Off by default; enable it from Connection settings ("Share usage data") if you'd like to help; you can turn it off again at any time. See External Services above for exactly what is and isn't sent.
 * Improvement: Support Bundle redaction now also covers WordPress and WooCommerce session cookies, as a second line of defense on top of the existing API key and token protections.
 
 = 3.4.7 =
 
-* Improvement: the Export Support Bundle tool (Tools > System) now includes a License section when SecureHold PRO is installed — status, plan, last check time, and details of the last activation or check attempt (HTTP status, connection errors) — so a licensing issue can be diagnosed from the bundle alone.
+* Improvement: the Export Support Bundle tool (Tools > System) now includes a License section when SecureHold PRO is installed: status, plan, last check time, and details of the last activation or check attempt (HTTP status, connection errors), so a licensing issue can be diagnosed from the bundle alone.
 
 = 3.4.6 =
 
@@ -314,7 +314,7 @@ When the plugin is deactivated, an optional feedback form appears in the WordPre
 
 = 3.4.3 =
 
-* Fix: product and category deposit rules created by the Rule Engine no longer stay active after the Rule Engine becomes unavailable — deposit calculation now correctly falls back to the global rule in that case.
+* Fix: product and category deposit rules created by the Rule Engine no longer stay active after the Rule Engine becomes unavailable: deposit calculation now correctly falls back to the global rule in that case.
 * Fix: existing product and category rules are preserved and automatically resume being applied once the Rule Engine is available again; no rule data is lost.
 * Removed: the legacy per-product "Security Deposit" tab on the WooCommerce product edit screen, which had no effect on the deposit amount actually applied at checkout.
 * Fix: the Capture button on the WooCommerce order edit screen (classic and HPOS) now correctly opens the capture dialog; it previously had no effect.

@@ -1,4 +1,4 @@
-# SecureHold WP — Stripe Security Deposits for WooCommerce
+# SecureHold WP: Stripe Security Deposits for WooCommerce
 
 SecureHold WP lets WooCommerce merchants place Stripe pre-authorization holds (security deposits) on customer credit cards at order time. The hold ring-fences funds on the customer's card without charging them. You decide later whether to capture (charge) or release (cancel) the hold.
 
@@ -9,7 +9,7 @@ SecureHold WP lets WooCommerce merchants place Stripe pre-authorization holds (s
 ## What It Does
 
 1. Customer places a WooCommerce order and pays via Stripe.
-2. SecureHold WP creates a separate Stripe PaymentIntent for the security deposit, using the same payment method — no second checkout required.
+2. SecureHold WP creates a separate Stripe PaymentIntent for the security deposit, using the same payment method (no second checkout required).
 3. The authorized hold appears in your SecureHold Deposits list and in your Stripe Dashboard.
 4. You capture the hold (funds transfer to you) or release it (authorization removed) from within WooCommerce.
 
@@ -26,8 +26,8 @@ SecureHold WP lets WooCommerce merchants place Stripe pre-authorization holds (s
 
 ## Requirements
 
-- WordPress 6.0 or later
-- WooCommerce 7.0 or later
+- WordPress 6.0 or later (tested up to 7.1)
+- WooCommerce 5.0 or later (tested up to 11.1)
 - WooCommerce Stripe Gateway (official plugin by Stripe / WooCommerce)
 - Stripe account (test account recommended for initial setup)
 - PHP 7.4 or later
@@ -40,23 +40,28 @@ The Stripe PHP SDK is bundled with the plugin. No manual Composer installation i
 
 | Feature | FREE | PRO |
 |---|---|---|
-| Immediate hold strategy | ✅ | ✅ |
-| Manual hold strategy | ✅ | ✅ |
-| Global deposit rules | ✅ | ✅ |
-| Product-level rules | ✅ | ✅ |
-| Category-level rules | ✅ | ✅ |
-| Checkout deposit notice | ✅ | ✅ |
-| Guest checkout support | ✅ | ✅ |
-| Health Check & self-test | ✅ | ✅ |
-| Delayed / Scheduled / By Status timing | — | ✅ |
-| Highest Deposit Wins rule policy | — | ✅ |
-| Per Item Aggregated mode | — | ✅ |
-| Auto-release (cron-based) | — | ✅ |
-| My Account deposits tab | — | ✅ |
-| Dashboard analytics | — | ✅ |
-| Full audit log viewer | — | ✅ |
-| Email branding | — | ✅ |
-| Advanced diagnostic tools | — | ✅ |
+| Stripe authorization holds, capture (full or partial) and release | ✅ | ✅ |
+| Immediate and manual hold creation | ✅ | ✅ |
+| Global deposit amount (fixed or percentage) | ✅ | ✅ |
+| Priority Chain and Highest Deposit Wins | ✅ | ✅ |
+| Per-order and per-item aggregated calculation (one hold per order) | ✅ | ✅ |
+| Checkout deposit notice, "My Deposits" page, email notifications | ✅ | ✅ |
+| Automatic release after 1 to 7 days | ✅ | ✅ |
+| Setup Wizard, Health Check, diagnostic export | ✅ | ✅ |
+| Settings > Integrations and the MagePeople bridge | ✅ | ✅ |
+| Applied Configuration shown on each hold | ✅ | ✅ |
+| Per-product and per-category deposit rules, live rule simulator | | ✅ |
+| Delayed, Scheduled and By-Status timing | | ✅ |
+| WooCommerce Native Multi-Hold (Multiple Hold Groups) | | ✅ |
+| Email branding, extended logs, Stripe Inspector | | ✅ |
+
+### Multi-Hold (PRO)
+
+By default SecureHold places one hold per order. With SecureHold PRO, you can choose **Multiple Hold Groups** (Hold Structure) to place one independent hold per eligible order item, each captured or released on its own. It is optional and off by default. Existing orders are not affected.
+
+### Integrations
+
+**Settings > Integrations** lists what SecureHold can build holds from and the status of each one: WooCommerce, the optional Booking and Rental Manager (MagePeople) bridge for fixed security deposit amounts, and the optional SecureHold Stripe App. **Booking Activities is coming soon and is not available yet.**
 
 ---
 
@@ -69,7 +74,7 @@ The following guides cover installation, first setup, and the most critical conc
 | [WHAT-IS-SECUREHOLD.md](WHAT-IS-SECUREHOLD.md) | What the plugin does and who it is for |
 | [HOW-STRIPE-HOLDS-WORK.md](HOW-STRIPE-HOLDS-WORK.md) | How Stripe pre-authorization holds work |
 | [CAPTURE-VS-RELEASE.md](CAPTURE-VS-RELEASE.md) | Difference between capturing and releasing a hold |
-| [7-DAY-EXPIRATION.md](7-DAY-EXPIRATION.md) | Stripe's 7-day expiration rule — critical operational note |
+| [7-DAY-EXPIRATION.md](7-DAY-EXPIRATION.md) | Stripe's 7-day expiration rule (critical operational note) |
 | [BEFORE-YOU-BEGIN.md](BEFORE-YOU-BEGIN.md) | Pre-installation requirements and checklist |
 | [QUICK-START.md](QUICK-START.md) | Full installation and first hold walkthrough |
 | [SETUP-WIZARD.md](SETUP-WIZARD.md) | Step-by-step Setup Wizard reference |

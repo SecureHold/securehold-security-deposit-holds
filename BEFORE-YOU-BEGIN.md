@@ -1,4 +1,4 @@
-# Before You Begin — Pre-Installation Checklist
+# Before You Begin: Pre-Installation Checklist
 
 Before installing SecureHold WP, review this checklist. Having everything in place before you start will make the setup process smooth and prevent common errors.
 
@@ -8,7 +8,7 @@ Before installing SecureHold WP, review this checklist. Having everything in pla
 
 - [ ] **WordPress** is installed and running (version 6.0 or later recommended)
 - [ ] **WooCommerce** is installed and active (version 7.0 or later recommended)
-- [ ] **WooCommerce Stripe Gateway** is installed and active — this is the official Stripe plugin for WooCommerce, available free from WordPress.org
+- [ ] **WooCommerce Stripe Gateway** is installed and active: this is the official Stripe plugin for WooCommerce, available free from WordPress.org
 
 > The WooCommerce Stripe Gateway handles the payment at checkout. SecureHold WP adds the security deposit layer on top of it. Both plugins must be present.
 
@@ -52,11 +52,11 @@ For the FREE version with Immediate or Manual timing, WP-Cron is not required.
 
 ### The deposit hold is not shown as a separate WooCommerce order
 
-SecureHold WP does not create a second WooCommerce order for the deposit. The hold is managed as a deposit record linked to the existing order. It appears in **SecureHold WP → Deposits** and in the WooCommerce order metabox — not as a separate order.
+SecureHold WP does not create a second WooCommerce order for the deposit. The hold is managed as a deposit record linked to the existing order. It appears in **SecureHold WP → Deposits** and in the WooCommerce order metabox, not as a separate order.
 
 ---
 
-## Before Going Live — Understand the 7-Day Rule
+## Before Going Live: Understand the 7-Day Rule
 
 Stripe authorization holds expire after approximately 7 days. If you do not capture or release a hold within that window, Stripe cancels it automatically and you can no longer charge the customer through that hold.
 

@@ -2,7 +2,7 @@
 
 ## In Plain Terms
 
-SecureHold WP is a WordPress plugin that lets you collect a **security deposit** from customers when they place a WooCommerce order — without charging them upfront.
+SecureHold WP is a WordPress plugin that lets you collect a **security deposit** from customers when they place a WooCommerce order, without charging them upfront.
 
 It works by placing a **hold** on the customer's credit or debit card through Stripe. Think of it like the hold a hotel puts on your card at check-in. The money is reserved but not taken. At the end of the stay, the hotel either charges the deposit or releases it. SecureHold WP gives you the same capability for your WooCommerce store.
 
@@ -21,19 +21,19 @@ A security deposit hold is a **temporary reservation** of funds on a payment car
 
 ---
 
-## Hold vs. Charge — The Difference
+## Hold vs. Charge: The Difference
 
 | | Hold | Charge |
 |---|---|---|
 | Money leaves the customer's account | No | Yes |
 | Appears on the customer's statement | Yes (as pending) | Yes (as completed) |
-| You control the outcome | Yes — capture or release | Already settled |
-| Reversible | Yes — release it | No (requires a refund) |
-| Expires automatically | Yes — ~7 days | No |
+| You control the outcome | Yes, capture or release | Already settled |
+| Reversible | Yes, release it | No (requires a refund) |
+| Expires automatically | Yes, ~7 days | No |
 
 ---
 
-## How SecureHold WP Works — Three Steps
+## How SecureHold WP Works: Three Steps
 
 **1. Customer checks out as normal.**
 The customer pays for their order using Stripe (credit card, debit card). No extra step is required on their end.
@@ -43,8 +43,8 @@ Immediately after the order is placed, SecureHold WP creates a separate Stripe a
 
 **3. You capture or release when the time comes.**
 From your WooCommerce admin, you can:
-- **Capture** the hold — the deposit amount is charged to the customer's card.
-- **Release** the hold — the reservation is removed and the customer's funds are fully available again.
+- **Capture** the hold: the deposit amount is charged to the customer's card.
+- **Release** the hold: the reservation is removed and the customer's funds are fully available again.
 
 ---
 
@@ -82,7 +82,7 @@ Customers do not need to take any additional action. The hold is created automat
 
 ## Is It Safe?
 
-Yes. SecureHold WP uses Stripe's official pre-authorization API. The customer's card details are never stored by the plugin — they are handled entirely by Stripe, which is a PCI DSS Level 1 certified payment processor.
+Yes. SecureHold WP uses Stripe's official pre-authorization API. The customer's card details are never stored by the plugin; they are handled entirely by Stripe, which is a PCI DSS Level 1 certified payment processor.
 
 The hold uses the same payment method the customer used at checkout. No second card entry is required.
 

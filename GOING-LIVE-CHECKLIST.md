@@ -1,4 +1,4 @@
-# Going Live — Production Transition Checklist
+# Going Live: Production Transition Checklist
 
 > ⚠️ **Do not switch to live mode until your test setup is fully working.** Complete the [FIRST-TEST-HOLD-CHECKLIST.md](FIRST-TEST-HOLD-CHECKLIST.md) before proceeding.
 
@@ -89,7 +89,7 @@ You must create a **separate webhook endpoint** in your Stripe **live** environm
 
 - [ ] **Confirm the hold appears in your Stripe live dashboard** as a PaymentIntent with status **Requires Capture**
 
-- [ ] **Release the hold immediately** — this was a verification hold, not a real deposit
+- [ ] **Release the hold immediately**: this was a verification hold, not a real deposit
   Go to the deposit and click **Release**. Verify the status changes to Released.
 
 - [ ] **Confirm no unexpected charge appeared on your card**

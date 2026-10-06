@@ -1,10 +1,10 @@
-# Capture vs. Release — Understanding Your Two Options
+# Capture vs. Release: Understanding Your Two Options
 
 When a security deposit hold is active (status: **Authorized**), you have exactly two options: capture the hold or release it. This page explains what each action does, when to use it, and what happens after.
 
 ---
 
-## Capture — Charge the Deposit
+## Capture: Charge the Deposit
 
 **What it means:**
 Capturing a hold transfers the reserved funds from the customer's card to your Stripe balance. The customer is charged the deposit amount.
@@ -25,7 +25,7 @@ Capturing a hold transfers the reserved funds from the customer's card to your S
 
 ---
 
-## Release — Return the Deposit
+## Release: Return the Deposit
 
 **What it means:**
 Releasing a hold cancels the authorization. The reserved funds are freed and become fully available to the customer. No money is charged.
@@ -80,7 +80,7 @@ Releasing a hold cancels the authorization. The reserved funds are freed and bec
 
 ---
 
-## Before You Click — Quick Checklist
+## Before You Click: Quick Checklist
 
 Before capturing or releasing, confirm the following:
 
@@ -101,6 +101,6 @@ Before capturing or releasing, confirm the following:
 
 If approximately 7 days have passed since the hold was created and you have not captured or released it, Stripe will have automatically canceled the authorization. The deposit status in SecureHold WP will show **Released** (updated via webhook).
 
-At this point, the customer can no longer be charged through this hold. You would need to create a new hold manually — which requires the customer's payment method to still be available and reusable.
+At this point, the customer can no longer be charged through this hold. You would need to create a new hold manually, which requires the customer's payment method to still be available and reusable.
 
 To avoid this situation, always capture or release holds before the 7-day window closes. See [7-DAY-EXPIRATION.md](7-DAY-EXPIRATION.md) for full details.

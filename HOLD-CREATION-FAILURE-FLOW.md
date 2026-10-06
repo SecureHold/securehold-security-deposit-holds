@@ -1,4 +1,4 @@
-# Hold Not Created — Diagnosis Guide
+# Hold Not Created: Diagnosis Guide
 
 Use this guide if a security deposit hold was not created after a customer placed an order.
 
@@ -15,7 +15,7 @@ You are on the right page if:
 
 ---
 
-## Check 1 — Did the Order Pay Successfully?
+## Check 1: Did the Order Pay Successfully?
 
 Go to **WooCommerce → Orders** and open the order in question.
 
@@ -28,7 +28,7 @@ Go to **WooCommerce → Orders** and open the order in question.
 
 ---
 
-## Check 2 — Does the Hold Exist but Is Hidden or Filtered?
+## Check 2: Does the Hold Exist but Is Hidden or Filtered?
 
 Go to **SecureHold WP → Deposits** and clear all active filters (status, date range, search).
 
@@ -43,7 +43,7 @@ Go to **SecureHold WP → Deposits** and clear all active filters (status, date 
 
 ---
 
-## Check 3 — Is the Product Excluded?
+## Check 3: Is the Product Excluded?
 
 Go to **SecureHold WP → Settings → Deposit Rules**.
 
@@ -54,7 +54,7 @@ Go to **SecureHold WP → Settings → Deposit Rules**.
 
 ---
 
-## Check 4 — Does the Order Meet the Minimum Cart Amount?
+## Check 4: Does the Order Meet the Minimum Cart Amount?
 
 Go to **SecureHold WP → Settings → Deposit Rules**.
 
@@ -64,7 +64,7 @@ Go to **SecureHold WP → Settings → Deposit Rules**.
 
 ---
 
-## Check 5 — Is There a Failed Hold? What Does It Say?
+## Check 5: Is There a Failed Hold? What Does It Say?
 
 Go to **SecureHold WP → Deposits** and find the failed deposit. Click **View Details**.
 
@@ -86,7 +86,7 @@ SecureHold WP could not identify a reusable payment method on the order.
 
 What to check:
 - Open the WooCommerce order and look for `_stripe_payment_method` or `_stripe_payment_method_id` in the order meta.
-- If empty, Stripe did not save the payment method. This is related to the single-use payment method issue — see [SINGLE-USE-PAYMENT-METHOD.md](SINGLE-USE-PAYMENT-METHOD.md).
+- If empty, Stripe did not save the payment method. This is related to the single-use payment method issue (see [SINGLE-USE-PAYMENT-METHOD.md](SINGLE-USE-PAYMENT-METHOD.md)).
 
 **An API error message from Stripe**
 Stripe rejected the hold creation request.
@@ -98,7 +98,7 @@ What to check:
 
 ---
 
-## Check 6 — Enable Debug Logging
+## Check 6: Enable Debug Logging
 
 If the cause is not yet clear, enable detailed logging.
 
@@ -106,7 +106,7 @@ If the cause is not yet clear, enable detailed logging.
 2. Enable **Debug Logging**.
 3. Click **Save Changes**.
 4. Place a new test order and trigger the hold creation again.
-5. Check the logs in **WooCommerce → Status → Logs** — select the `securehold-stripe-deposits` log source.
+5. Check the logs in **WooCommerce → Status → Logs**: select the `securehold-stripe-deposits` log source.
 
 Look for lines marked `[error]` or `[warning]`. The log entries will show exactly where the hold creation process failed.
 
@@ -114,7 +114,7 @@ After diagnosis, disable debug logging to keep your logs clean.
 
 ---
 
-## Check 7 — Is There a Stripe Mode Mismatch?
+## Check 7: Is There a Stripe Mode Mismatch?
 
 Go to **SecureHold WP → Settings → Connection**.
 

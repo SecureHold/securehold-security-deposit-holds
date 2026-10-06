@@ -1,4 +1,4 @@
-# Setup Wizard — Step-by-Step Reference
+# Setup Wizard: Step-by-Step Reference
 
 The Setup Wizard appears automatically after you activate SecureHold WP for the first time. It guides you through the seven essential configuration steps.
 
@@ -6,7 +6,7 @@ You can also access the wizard at any time from **SecureHold WP → Setup Wizard
 
 ---
 
-## Step 1 — Welcome
+## Step 1: Welcome
 
 **Purpose:** Introduction to SecureHold WP and an overview of what the wizard will help you configure.
 
@@ -16,13 +16,13 @@ You can also access the wizard at any time from **SecureHold WP → Setup Wizard
 
 ---
 
-## Step 2 — Required Plugins
+## Step 2: Required Plugins
 
 **Purpose:** Verify that WooCommerce and the WooCommerce Stripe Gateway are installed and active. Both are required for SecureHold WP to function.
 
 **What the wizard checks:**
-- WooCommerce — installed and active
-- WooCommerce Stripe Gateway — installed and active
+- WooCommerce: installed and active
+- WooCommerce Stripe Gateway: installed and active
 
 **What to do:**
 - If both show a green checkmark, click **Continue**.
@@ -34,9 +34,9 @@ You can also access the wizard at any time from **SecureHold WP → Setup Wizard
 
 ---
 
-## Step 3 — WooCommerce Configuration
+## Step 3: WooCommerce Configuration
 
-**Purpose:** Verify that WooCommerce is set up correctly — currency, payment methods, and general configuration.
+**Purpose:** Verify that WooCommerce is set up correctly: currency, payment methods, and general configuration.
 
 **What to do:** Review any items flagged by the wizard. If WooCommerce Stripe is not yet configured with your Stripe account, complete that setup first, then return to this step.
 
@@ -46,7 +46,7 @@ You can also access the wizard at any time from **SecureHold WP → Setup Wizard
 
 ---
 
-## Step 4 — Stripe SDK
+## Step 4: Stripe SDK
 
 **Purpose:** Confirm that the Stripe PHP SDK is bundled and available. The SDK is required for SecureHold WP to communicate with the Stripe API.
 
@@ -60,14 +60,14 @@ Fix: Download a fresh copy of SecureHold WP from your account or from WordPress.
 
 ---
 
-## Step 5 — API Keys
+## Step 5: API Keys
 
 **Purpose:** Connect SecureHold WP to your Stripe account by entering your Stripe API keys.
 
 **What to do:**
 
 1. Log in to your [Stripe Dashboard](https://dashboard.stripe.com).
-2. Confirm that **Test mode** is enabled (recommended for initial setup — toggle in the top-right corner).
+2. Confirm that **Test mode** is enabled (recommended for initial setup; toggle in the top-right corner).
 3. Go to **Developers → API Keys**.
 4. Copy the **Publishable key** (starts with `pk_test_`).
 5. Copy the **Secret key** (starts with `sk_test_`). Click **Reveal** if it is hidden.
@@ -81,7 +81,7 @@ Fix: Download a fresh copy of SecureHold WP from your account or from WordPress.
 
 ---
 
-## Step 6 — Webhook
+## Step 6: Webhook
 
 **Purpose:** Configure a Stripe webhook so that SecureHold WP receives real-time notifications when a hold is authorized, captured, released, or fails.
 
@@ -120,7 +120,7 @@ Replace `yoursite.com` with your actual domain.
 
 ---
 
-## Step 7 — Done
+## Step 7: Done
 
 **Purpose:** Confirm that setup is complete and guide you to the next step.
 
@@ -136,7 +136,7 @@ Once the wizard is complete, the following settings are ready:
 
 - Stripe API keys (test mode)
 - Webhook endpoint and signing secret
-- Default deposit amount (set to a placeholder — update this in Settings → Deposit Rules)
+- Default deposit amount (set to a placeholder: update this in Settings → Deposit Rules)
 
 **What to configure next:**
 

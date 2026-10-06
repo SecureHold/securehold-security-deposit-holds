@@ -1,4 +1,4 @@
-# The 7-Day Expiration Rule — What You Must Know
+# The 7-Day Expiration Rule: What You Must Know
 
 > ⚠️ **This is one of the most important operational facts about Stripe security deposit holds. Read this before accepting your first real hold.**
 
@@ -21,7 +21,7 @@ This happens automatically and silently. SecureHold WP does not currently send a
 
 ## Why Does Stripe Do This?
 
-This is a Stripe platform rule, not a SecureHold WP limitation. Stripe (and the card networks behind it — Visa, Mastercard, etc.) set a maximum window for pre-authorization holds to protect cardholders. After this window, the reservation expires and the card issuer releases the funds.
+This is a Stripe platform rule, not a SecureHold WP limitation. Stripe (and the card networks behind it, Visa, Mastercard, etc.) set a maximum window for pre-authorization holds to protect cardholders. After this window, the reservation expires and the card issuer releases the funds.
 
 **SecureHold WP cannot extend this window.** The 7-day limit is enforced by Stripe and by your customer's bank.
 
@@ -67,7 +67,7 @@ Each deposit detail page shows the authorization date. Count 7 days from that da
 If a hold expired before you could capture it:
 
 1. The funds cannot be recovered through that hold. It is gone.
-2. You may create a new manual hold on the order — but this requires the customer's payment method to still be saved and reusable. Go to the WooCommerce order and use the **Create Hold** option in the SecureHold WP metabox.
+2. You may create a new manual hold on the order, but this requires the customer's payment method to still be saved and reusable. Go to the WooCommerce order and use the **Create Hold** option in the SecureHold WP metabox.
 3. If the payment method is no longer available, you will need to collect a new payment from the customer through other means.
 
 This is why it is critical to act within the 7-day window. Expired holds cannot be reactivated.
@@ -82,7 +82,7 @@ This is why it is critical to act within the 7-day window. Expired holds cannot 
 | Who enforces it | Stripe and the card networks |
 | What happens at expiry | Hold is automatically canceled, funds released |
 | Can SecureHold extend it | No |
-| Can you recover an expired hold | No — you must create a new hold if the PM is still available |
+| Can you recover an expired hold | No, you must create a new hold if the PM is still available |
 | Best practice | Capture or release every hold within 5–6 days to be safe |
 | PRO option | Auto-release after a configurable number of days |
 
@@ -90,5 +90,5 @@ This is why it is critical to act within the 7-day window. Expired holds cannot 
 
 ## Related
 
-- [CAPTURE-VS-RELEASE.md](CAPTURE-VS-RELEASE.md) — how to capture or release a hold before it expires
-- [HOW-STRIPE-HOLDS-WORK.md](HOW-STRIPE-HOLDS-WORK.md) — how Stripe pre-authorization works
+- [CAPTURE-VS-RELEASE.md](CAPTURE-VS-RELEASE.md) - how to capture or release a hold before it expires
+- [HOW-STRIPE-HOLDS-WORK.md](HOW-STRIPE-HOLDS-WORK.md) - how Stripe pre-authorization works

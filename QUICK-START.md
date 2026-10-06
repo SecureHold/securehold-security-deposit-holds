@@ -1,4 +1,4 @@
-# SecureHold WP — Quick Start Guide
+# SecureHold WP: Quick Start Guide
 
 This guide takes you from a fresh installation to your first verified security deposit hold. Follow each step in order. Do not skip the test phase before going live.
 
@@ -18,7 +18,7 @@ If any of these are missing, see [BEFORE-YOU-BEGIN.md](BEFORE-YOU-BEGIN.md).
 
 ---
 
-## Step 1 — Install and Activate SecureHold WP
+## Step 1: Install and Activate SecureHold WP
 
 **Automatic installation (recommended):**
 
@@ -36,7 +36,7 @@ After activation, you will be prompted to run the Setup Wizard. Click **Run the 
 
 ---
 
-## Step 2 — Run the Setup Wizard
+## Step 2: Run the Setup Wizard
 
 The Setup Wizard walks you through the essential configuration in seven steps. For a full reference of each step, see [SETUP-WIZARD.md](SETUP-WIZARD.md).
 
@@ -52,7 +52,7 @@ The wizard checks that WooCommerce and the WooCommerce Stripe Gateway are both i
 
 ### Step 3: WooCommerce Configuration
 
-The wizard verifies that WooCommerce is configured correctly — currency, checkout settings, and payment gateway. Review any warnings and resolve them before proceeding.
+The wizard verifies that WooCommerce is configured correctly: currency, checkout settings, and payment gateway. Review any warnings and resolve them before proceeding.
 
 ### Step 4: Stripe SDK
 
@@ -101,7 +101,7 @@ Setup is complete. Click **Go to Dashboard** to begin.
 
 ---
 
-## Step 3 — Configure Your First Deposit
+## Step 3: Configure Your First Deposit
 
 Before placing a test order, set a deposit amount.
 
@@ -113,7 +113,7 @@ Before placing a test order, set a deposit amount.
 
 ---
 
-## Step 4 — Place a Test Order
+## Step 4: Place a Test Order
 
 1. Open your WooCommerce store in a browser (or a private/incognito window).
 2. Add any product to the cart and proceed to checkout.
@@ -131,7 +131,7 @@ Before placing a test order, set a deposit amount.
 
 ---
 
-## Step 5 — Verify the Hold
+## Step 5: Verify the Hold
 
 **In SecureHold WP:**
 
@@ -142,7 +142,7 @@ Before placing a test order, set a deposit amount.
 **In your Stripe Dashboard (test mode):**
 
 1. Go to **Payments → PaymentIntents**.
-2. Find the entry for your test order's hold — it should show **Requires Capture**.
+2. Find the entry for your test order's hold: it should show **Requires Capture**.
 
 **In WooCommerce:**
 
@@ -153,7 +153,7 @@ If the hold does not appear, see [HOLD-CREATION-FAILURE-FLOW.md](HOLD-CREATION-F
 
 ---
 
-## Step 6 — Test a Release
+## Step 6: Test a Release
 
 1. In **SecureHold WP → Deposits**, find your test hold.
 2. Click **Release** (either from the deposits list kebab menu or from the deposit details page).
@@ -180,7 +180,7 @@ Before moving on, confirm every item below:
 - [ ] Hold appears in SecureHold → Deposits with status **Authorized**
 - [ ] Stripe PaymentIntent shows **Requires Capture**
 - [ ] WooCommerce order metabox shows the hold
-- [ ] Release test completed — status changed to **Released** / Stripe shows **Canceled**
+- [ ] Release test completed: status changed to **Released** / Stripe shows **Canceled**
 
 If all items are checked, your test setup is working correctly.
 
@@ -202,7 +202,7 @@ Real card numbers will not work in Stripe test mode. Use `4242 4242 4242 4242`.
 
 ---
 
-## Next Step — Going Live
+## Next Step: Going Live
 
 When your test setup is fully working and you are ready to accept real deposits:
 

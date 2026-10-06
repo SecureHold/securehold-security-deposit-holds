@@ -1,4 +1,4 @@
-# First Test Hold — Verification Checklist
+# First Test Hold: Verification Checklist
 
 Use this checklist after completing the Setup Wizard to confirm your configuration is working correctly from end to end.
 
@@ -91,7 +91,7 @@ Complete every item before considering your test setup done. Do not switch to li
 
 - [ ] **In your Stripe test dashboard, the PaymentIntent status changes to Canceled**
 
-- [ ] **No funds were charged** — verify your Stripe balance was not affected
+- [ ] **No funds were charged**: verify your Stripe balance was not affected
 
 ---
 

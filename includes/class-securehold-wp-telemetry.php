@@ -156,7 +156,7 @@ class Securehold_Wp_Telemetry {
                 </div>
                 <div style="flex-grow: 1;">
                     <p style="margin: 0 0 8px 0; font-size: 14px; line-height: 1.5;">
-                        <?php esc_html_e( 'Help us improve SecureHold by sharing minimal, pseudonymous usage data — never customer data, payments, or keys.', 'securehold-security-deposit-holds' ); ?>
+                        <?php esc_html_e( 'Help us improve SecureHold by sharing minimal, pseudonymous usage data (never customer data, payments, or keys).', 'securehold-security-deposit-holds' ); ?>
                     </p>
                     <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                         <button type="button" class="button button-primary securehold-telemetry-optin" data-nonce="<?php echo esc_attr( wp_create_nonce( 'securehold_telemetry_optin' ) ); ?>">
@@ -190,7 +190,7 @@ class Securehold_Wp_Telemetry {
 
         $this->opt_in();
 
-        wp_send_json_success( array( 'message' => __( 'Thank you — usage tracking is now on. You can turn it off any time from Settings.', 'securehold-security-deposit-holds' ) ) );
+        wp_send_json_success( array( 'message' => __( 'Thank you. Usage tracking is now on. You can turn it off any time from Settings.', 'securehold-security-deposit-holds' ) ) );
     }
 
     /**
@@ -206,7 +206,7 @@ class Securehold_Wp_Telemetry {
 
         update_option( self::OPT_NOTICE_DISMISSED, 'yes' );
 
-        wp_send_json_success( array( 'message' => __( 'No problem — SecureHold works exactly the same either way.', 'securehold-security-deposit-holds' ) ) );
+        wp_send_json_success( array( 'message' => __( 'No problem, SecureHold works exactly the same either way.', 'securehold-security-deposit-holds' ) ) );
     }
 
     // =========================================================================

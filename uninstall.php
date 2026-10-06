@@ -1,11 +1,65 @@
 <?php
 /**
- * Fired when the plugin is uninstalled
+ * Fired when the plugin is uninstalled.
+ *
+ * SAFETY MODEL (read this before touching anything below):
+ *
+ * Deleting a WordPress plugin from the Plugins screen is a single click with
+ * no confirmation of *what* gets wiped. An incident on 2026-09-25 showed
+ * exactly how that can go wrong: this same file, reached from an orphaned
+ * duplicate plugin folder, dropped the live installation's holds/logs
+ * tables and wiped ~40 options and all `_securehold_*` postmeta/order-meta
+ * site-wide — despite the duplicate never having done anything else.
+ *
+ * Two independent conditions must BOTH hold before this file deletes a
+ * single row of business data:
+ *
+ *   1. Explicit opt-in — `securehold_delete_data_on_uninstall` is truthy.
+ *      OFF by default. Settings > Connection > Danger Zone.
+ *   2. Canonical install — WP_UNINSTALL_PLUGIN (set by WordPress core to the
+ *      exact "<folder>/<main-file>.php" of the plugin actually being
+ *      uninstalled) must point at this plugin's canonical folder name, not
+ *      a duplicate/renamed/backup copy.
+ *
+ * If either condition is false, this file does nothing but return —
+ * WordPress still removes the plugin's files; all SecureHold data stays.
+ *
+ * @since 3.5.0 Rewritten for the opt-in + canonical-install guard.
  */
 
-if (!defined('WP_UNINSTALL_PLUGIN')) {
+if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
     exit;
 }
+
+// ── Guard 1: explicit opt-in ────────────────────────────────────────────────
+// Convention matches the plugin's other boolean options: '1' = checked.
+// Anything else (unset, '', '0', false) means "preserve data" — the safe
+// default for every existing install that never saw this setting before.
+$securehold_delete_data_opt_in = get_option( 'securehold_delete_data_on_uninstall', '' );
+
+if ( '1' !== $securehold_delete_data_opt_in ) {
+    return;
+}
+
+// ── Guard 2: canonical install only ─────────────────────────────────────────
+// WP_UNINSTALL_PLUGIN is set by WordPress core (wp-admin/includes/plugin.php,
+// uninstall_plugin()) to the plugin file path relative to WP_PLUGIN_DIR, e.g.
+// "securehold-security-deposit-holds/securehold-wp-stripe-deposits.php". Its
+// directory component is the ACTUAL folder that was just deleted/uninstalled
+// — it cannot be spoofed by the plugin's own code, since WordPress derives it
+// from the real filesystem path before this file is ever included. A
+// duplicate folder (an auto-generated "-xxxx" suffix from a failed deploy, a
+// "-backup"/"-old"/"-fix" clone, anything not exactly the canonical slug)
+// fails this check and the destructive branch below never runs.
+$securehold_canonical_slug       = 'securehold-security-deposit-holds';
+$securehold_uninstalling_folder  = dirname( WP_UNINSTALL_PLUGIN );
+$securehold_is_canonical_install = ( $securehold_canonical_slug === $securehold_uninstalling_folder );
+
+if ( ! $securehold_is_canonical_install ) {
+    return;
+}
+
+// ── Both guards passed: proceed with destructive cleanup ────────────────────
 
 global $wpdb;
 
@@ -47,6 +101,10 @@ $options_to_delete = array(
     'securehold_scheduled_direction',
     'securehold_days_before_date',
 
+    // Multi-Hold engine (WooCommerce Native Multi-Hold, 3.5.0+)
+    'securehold_hold_structure',
+    'securehold_multi_hold_grouping_source',
+
     // Category & product rules
     'securehold_category_rules',
 
@@ -78,6 +136,9 @@ $options_to_delete = array(
     'securehold_setup_modal_dismissed',
     'securehold_config_notice_dismissed',
     'securehold_wizard_completed',
+
+    // This opt-in flag itself
+    'securehold_delete_data_on_uninstall',
 );
 
 foreach ($options_to_delete as $option) {
@@ -87,6 +148,7 @@ foreach ($options_to_delete as $option) {
 // Per-order hold-creation locks (securehold_hold_lock_<order_id>).
 // Named dynamically, so they cannot be listed above. The scheduler releases each
 // one on every exit path; this only sweeps a lock orphaned by a fatal error.
+// Scoped to this plugin's own option-name prefix — never a risk to other data.
 $wpdb->query(
     $wpdb->prepare(
         "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
@@ -117,11 +179,63 @@ wp_clear_scheduled_hook('securehold_trigger_scheduled_hold');
 //
 // Product meta always lives in wp_postmeta, so that sweep is never conditional.
 //
-// Only SecureHold's own keys are removed. WooCommerce and WooCommerce Stripe
-// data — _stripe_intent_id, _stripe_payment_method and the rest — belongs to
-// those plugins and is left untouched.
-$securehold_meta_prefix = $wpdb->esc_like( '_securehold_' ) . '%';
+// This is a PRECISE, ENUMERATED allow-list of the exact meta_key strings this
+// plugin (FREE + PRO) writes — never a `LIKE '_securehold_%'` sweep. That
+// broad pattern was the 2026-09-25 incident's second bug: it also matched
+// `_securehold_site_*` keys, which belong to the separate "SecureHold Site"
+// plugin, not this one. An IN() list cannot accidentally reach into another
+// component's namespace just because it shares the `_securehold_` prefix.
+// WooCommerce's own `_stripe_*` gateway meta is likewise never touched.
+$securehold_owned_meta_keys = array(
+    '_securehold_aggregation_mode',
+    '_securehold_attempt_made',
+    '_securehold_auto_release_days',
+    '_securehold_capture_timing',
+    '_securehold_captured_amount',
+    '_securehold_date_field_key',
+    '_securehold_date_resolved',
+    '_securehold_date_source',
+    '_securehold_days_before_date',
+    '_securehold_delay_days',
+    '_securehold_deposit_amount',
+    '_securehold_deposit_next_run',
+    '_securehold_deposit_status',
+    '_securehold_email_authorized_sent',   // Securehold_Email_Deposit_Authorized::SENT_META
+    '_securehold_email_captured_sent',     // Securehold_Email_Deposit_Captured::SENT_META
+    '_securehold_email_released_sent',     // Securehold_Email_Deposit_Released::SENT_META
+    '_securehold_enabled',
+    '_securehold_hold_amount',
+    '_securehold_hold_failed',
+    '_securehold_hold_failure_message',
+    '_securehold_hold_failure_reason',
+    '_securehold_item_breakdown',
+    '_securehold_missing_data_retries',
+    '_securehold_pi_customer',
+    '_securehold_pi_diagnosed',
+    '_securehold_pi_diagnosis_result',
+    '_securehold_pi_payment_method',
+    '_securehold_pi_setup_future_usage',
+    '_securehold_pm_customer',
+    '_securehold_pm_reusable',
+    '_securehold_pm_type',
+    '_securehold_rule_policy',
+    '_securehold_scheduled_days',
+    '_securehold_scheduled_direction',
+    '_securehold_sfu_injection_layer',
+    '_securehold_sfu_update_attempted',
+    '_securehold_sfu_update_result',
+    '_securehold_source',
+    '_securehold_source_id',
+    '_securehold_source_label',
+    '_securehold_stripe_mode',
+    '_securehold_stripe_resolved',
+    '_securehold_test_product',
+    '_securehold_timing_strategy',
+    '_securehold_trigger_status',
+    '_securehold_winner_item',
+);
 
+// Legacy pre-3.x keys that predate the `_securehold_` prefix entirely.
 $securehold_legacy_keys = array(
     'stripe_caution_intent_id',  // pre-3.x SecureHold key, no _stripe_ prefix
     'empreinte_effectuee',       // pre-3.x SecureHold key
@@ -135,12 +249,19 @@ if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wc_orders_meta ) ) 
     $securehold_meta_tables[] = $wc_orders_meta;
 }
 
+$securehold_owned_placeholders = implode( ',', array_fill( 0, count( $securehold_owned_meta_keys ), '%s' ) );
+
 foreach ( $securehold_meta_tables as $table ) {
 
-    // One indexed DELETE per pattern, rather than loading rows first: this runs
-    // once, and must stay affordable on a store with a large order history.
+    // One indexed DELETE against the enumerated key list, rather than a
+    // prefix LIKE sweep or loading rows first: still a single query, but it
+    // can only ever remove rows whose meta_key exactly matches a key this
+    // plugin is known to write.
     $wpdb->query(
-        $wpdb->prepare( "DELETE FROM `{$table}` WHERE meta_key LIKE %s", $securehold_meta_prefix )
+        $wpdb->prepare(
+            "DELETE FROM `{$table}` WHERE meta_key IN ({$securehold_owned_placeholders})",
+            $securehold_owned_meta_keys
+        )
     );
 
     foreach ( $securehold_legacy_keys as $legacy_key ) {

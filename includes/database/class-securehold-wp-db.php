@@ -125,6 +125,30 @@ class SecureHold_DB {
             $formats[] = '%s';
         }
 
+        // Multi-Hold engine: group_key/scheduled_for are optional and, like
+        // notes/expires_at/authorized_at above, only present in the insert
+        // when the caller actually has one — a caller that never passes
+        // group_key produces the exact same row shape as before this column
+        // existed (NULL = the implicit default group).
+        if (array_key_exists('group_key', $data) && $data['group_key'] !== null && $data['group_key'] !== '') {
+            $insert_data['group_key'] = (string) $data['group_key'];
+            $formats[] = '%s';
+        }
+        if (!empty($data['scheduled_for'])) {
+            $insert_data['scheduled_for'] = $data['scheduled_for'];
+            $formats[] = '%s';
+        }
+
+        // Diagnostic-only JSON (provider, booking_id, order_item_id...) —
+        // never read by any grouping/amount/timing/capture logic, only by
+        // the admin UI and support. Accepts either an already-encoded
+        // string or an array/object it encodes itself, so a caller never
+        // needs to know this column's storage format.
+        if (array_key_exists('metadata', $data) && $data['metadata'] !== null && $data['metadata'] !== '') {
+            $insert_data['metadata'] = is_string($data['metadata']) ? $data['metadata'] : wp_json_encode($data['metadata']);
+            $formats[] = '%s';
+        }
+
         $result = $wpdb->insert($table_name, $insert_data, $formats);
         
         if (function_exists('securehold_log')) {
@@ -169,6 +193,18 @@ class SecureHold_DB {
      * Retrieve a hold record by WooCommerce order ID.
      *
      * Returns null if the table does not exist (e.g., site before plugin activation).
+     *
+     * LEGACY SINGLE-HOLD HELPER — since the Multi-Hold engine (Phase A, 1.3.0).
+     * order_id is not a unique key on securehold_holds: a commande using
+     * Multiple Hold Groups can have more than one row, and this method has no
+     * way to say which one it means — it returns whichever row MySQL happens
+     * to return first, with no ORDER BY to make that deterministic. Safe to
+     * keep calling on any code path that is known to only ever see a
+     * Single-Hold-per-Order commande (the default and, today, only shipped
+     * behaviour). On a path that must target one specific hold — capture,
+     * release, anything keyed by an id the caller already has — use
+     * get_hold( $hold_id ) instead. On a path that must reason about every
+     * hold of an order, use get_holds_for_order( $order_id ).
      *
      * @since 1.0.0
      *
@@ -232,6 +268,101 @@ class SecureHold_DB {
             $data,
             array('id' => $hold_id)
         );
+    }
+
+    /**
+     * Retrieve a hold by its own primary key.
+     *
+     * The unambiguous read: it can never return a different row than the one
+     * asked for, whatever else exists for the same order. Every path that
+     * already knows which hold it means to act on — a capture, a release, a
+     * re-read taken after acquiring a lock — should read through this, not
+     * through get_deposit( $order_id ).
+     *
+     * @since 1.3.0 (Multi-Hold engine, Phase A)
+     *
+     * @param int $hold_id Row ID from the securehold_holds table.
+     * @return object|null Hold row object, or null if not found.
+     */
+    public static function get_hold( $hold_id ) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'securehold_holds';
+
+        $hold_id = (int) $hold_id;
+        if ( $hold_id <= 0 ) {
+            return null;
+        }
+
+        return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $table_name WHERE id = %d", $hold_id ) );
+    }
+
+    /**
+     * Retrieve every hold row belonging to a WooCommerce order.
+     *
+     * Unlike get_deposit(), this never hides a second hold: a commande with a
+     * single historical hold gets a one-element array, a commande using
+     * Multiple Hold Groups gets all of them, oldest first (creation order).
+     *
+     * @since 1.3.0 (Multi-Hold engine, Phase A)
+     *
+     * @param int $order_id WooCommerce order ID.
+     * @return object[] Array of hold row objects, oldest first. Empty array if none or table absent.
+     */
+    public static function get_holds_for_order( $order_id ) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'securehold_holds';
+
+        $order_id = (int) $order_id;
+        if ( $order_id <= 0 ) {
+            return array();
+        }
+
+        if ( $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $wpdb->esc_like( $table_name ) ) ) !== $table_name ) {
+            return array();
+        }
+
+        return $wpdb->get_results( $wpdb->prepare(
+            "SELECT * FROM $table_name WHERE order_id = %d ORDER BY id ASC",
+            $order_id
+        ) );
+    }
+
+    /**
+     * Retrieve the hold for one specific Hold Group within an order.
+     *
+     * $group_key = null targets the implicit default group that every
+     * historical row and every Single-Hold-per-Order commande already is —
+     * the same row get_deposit() would return, but disambiguated with
+     * ORDER BY ... LIMIT 1 instead of an arbitrary first match. A non-null
+     * key targets one specific group and never falls back to a different one.
+     *
+     * @since 1.3.0 (Multi-Hold engine, Phase A)
+     *
+     * @param int         $order_id  WooCommerce order ID.
+     * @param string|null $group_key Opaque group identifier, or null for the default group.
+     * @return object|null Hold row object, or null if not found.
+     */
+    public static function get_hold_for_group( $order_id, $group_key = null ) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'securehold_holds';
+
+        $order_id = (int) $order_id;
+        if ( $order_id <= 0 ) {
+            return null;
+        }
+
+        if ( $group_key === null ) {
+            return $wpdb->get_row( $wpdb->prepare(
+                "SELECT * FROM $table_name WHERE order_id = %d AND group_key IS NULL ORDER BY id DESC LIMIT 1",
+                $order_id
+            ) );
+        }
+
+        return $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM $table_name WHERE order_id = %d AND group_key = %s ORDER BY id DESC LIMIT 1",
+            $order_id,
+            $group_key
+        ) );
     }
 
     /**

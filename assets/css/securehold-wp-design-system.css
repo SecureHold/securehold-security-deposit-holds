@@ -336,6 +336,7 @@ button[name="securehold_tool_action"] .dashicons {
     border-radius: 9999px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    white-space: nowrap;
 }
 
 /* Success: Active hold (authorized) */

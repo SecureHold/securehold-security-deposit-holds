@@ -102,9 +102,11 @@ class Securehold_Email_Deposit_Captured extends WC_Email {
             return;
         }
 
-        // ── Guard 5: Anti-double-send ─────────────────────────────────
-        // Prevents a race between admin capture and webhook both firing.
-        if ( $this->object->get_meta( self::SENT_META, true ) ) {
+        // ── Guard 5: Anti-double-send, per hold ────────────────────────
+        // Prevents a race between admin capture and webhook both firing for
+        // the SAME hold. Keyed by which hold this is, not just the order:
+        // Hold A's capture email must never suppress Hold B's.
+        if ( Securehold_Email_Manager::already_sent( $this->object, self::SENT_META, $hold ) ) {
             $this->restore_locale();
             return;
         }
@@ -165,13 +167,16 @@ class Securehold_Email_Deposit_Captured extends WC_Email {
             );
 
             if ( $sent ) {
-                // Mark as sent to prevent duplicate from concurrent webhook / admin race.
-                $this->object->update_meta_data( self::SENT_META, current_time( 'mysql' ) );
+                // Mark as sent for THIS hold to prevent duplicate from a
+                // concurrent webhook / admin race, without blocking a
+                // different hold's own capture email.
+                Securehold_Email_Manager::mark_sent( $this->object, self::SENT_META, $hold );
                 $this->object->save();
 
                 if ( function_exists( 'securehold_log' ) ) {
                     securehold_log( 'Email sent: deposit_captured', array(
                         'order_id'  => $order_id,
+                        'hold_id'   => Securehold_Email_Manager::hold_key( $hold ) !== 'default' ? Securehold_Email_Manager::hold_key( $hold ) : null,
                         'recipient' => $this->recipient,
                     ), 'info' );
                 }

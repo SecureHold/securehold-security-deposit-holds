@@ -116,14 +116,14 @@ if ( ! defined( 'ABSPATH' ) ) exit;
             <div class="sh-rule-option sh-rule-option--selectable <?php echo $engine_version === 'v2' ? 'sh-rule-option--active' : ''; ?>"
                  data-group="sh-engine-version" data-value="v2">
                 <div>
-                    <strong><?php esc_html_e( 'V2 — Deterministic', 'securehold-security-deposit-holds' ); ?></strong>
+                    <strong><?php esc_html_e( 'V2: Deterministic', 'securehold-security-deposit-holds' ); ?></strong>
                     <p class="description"><?php esc_html_e( 'Stable tie-breaking so the result never depends on cart item order. Recommended.', 'securehold-security-deposit-holds' ); ?></p>
                 </div>
             </div>
             <div class="sh-rule-option sh-rule-option--selectable <?php echo $engine_version === 'legacy' ? 'sh-rule-option--active' : ''; ?>"
                  data-group="sh-engine-version" data-value="legacy">
                 <div>
-                    <strong><?php esc_html_e( 'Legacy — First match wins', 'securehold-security-deposit-holds' ); ?></strong>
+                    <strong><?php esc_html_e( 'Legacy: First match wins', 'securehold-security-deposit-holds' ); ?></strong>
                     <p class="description"><?php esc_html_e( 'Preserves original behavior. The winning rule may depend on cart item order.', 'securehold-security-deposit-holds' ); ?></p>
                 </div>
             </div>
@@ -193,6 +193,99 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                 </p>
             </div>
         </div>
+        <div class="sh-divider-gradient"></div>
+
+        <!-- Hold Structure Section (Multi-Hold engine) -->
+        <h3 class="sh-section-heading">
+            <span class="dashicons dashicons-networking" style="color: var(--sh-gray-600);"></span>
+            <?php esc_html_e( 'Hold Structure', 'securehold-security-deposit-holds' ); ?>
+        </h3>
+
+        <?php
+        // $hold_structure is the REAL stored preference and is always what the
+        // hidden field round-trips back to the server — including when PRO is
+        // momentarily inactive. This is deliberate: saving any other field on
+        // this tab (or any tab whose form includes this hidden input) must
+        // never downgrade a user's 'multiple_hold_groups' preference in the DB
+        // just because PRO happens to be off at that moment. The runtime gate
+        // (Securehold_Multi_Hold::may_create_multiple_groups(), which checks
+        // securehold_feature_enabled('multi_hold_groups')) is what actually
+        // prevents multi-hold creation without PRO — not this option's stored
+        // value. See settings-page.php's save handler for the matching guard.
+        //
+        // $hold_structure_display is forced to 'single_order_hold' ONLY for
+        // rendering (which card looks selected, whether the "no grouping
+        // policy" / grouping-source blocks show) — never written anywhere.
+        $hold_structure          = get_option( 'securehold_hold_structure', 'single_order_hold' );
+        $sh_multi_hold_pro_ready = securehold_feature_enabled( 'multi_hold_groups' );
+        $hold_structure_display  = $sh_multi_hold_pro_ready ? $hold_structure : 'single_order_hold';
+        ?>
+        <input type="hidden"
+               id="sh-hold-structure"
+               name="securehold_hold_structure"
+               value="<?php echo esc_attr( $hold_structure ); ?>">
+        <div class="sh-rule-option-group">
+            <div class="sh-rule-option sh-rule-option--selectable <?php echo $hold_structure_display !== 'multiple_hold_groups' ? 'sh-rule-option--active' : ''; ?>"
+                 data-group="sh-hold-structure" data-value="single_order_hold">
+                <div>
+                    <strong><?php esc_html_e( 'Single Hold per Order', 'securehold-security-deposit-holds' ); ?></strong>
+                    <span class="sh-recommended-badge"><?php esc_html_e( 'Default', 'securehold-security-deposit-holds' ); ?></span>
+                    <p class="description"><?php esc_html_e( 'Historical behavior. Every order produces exactly one security deposit hold.', 'securehold-security-deposit-holds' ); ?></p>
+                </div>
+            </div>
+            <?php if ( $sh_multi_hold_pro_ready ) : ?>
+            <div class="sh-rule-option sh-rule-option--selectable <?php echo $hold_structure_display === 'multiple_hold_groups' ? 'sh-rule-option--active' : ''; ?>"
+                 data-group="sh-hold-structure" data-value="multiple_hold_groups">
+                <div>
+                    <strong><?php esc_html_e( 'Multiple Hold Groups', 'securehold-security-deposit-holds' ); ?></strong>
+                    <p class="description"><?php esc_html_e( 'Allows an order to hold several independent deposits when a compatible integration or extension is active. With no such integration active, orders still produce a single hold: selecting this option alone does not split any order automatically.', 'securehold-security-deposit-holds' ); ?></p>
+                </div>
+            </div>
+            <?php else : ?>
+            <div class="sh-rule-option sh-rule-option--locked">
+                <div>
+                    <strong><?php esc_html_e( 'Multiple Hold Groups', 'securehold-security-deposit-holds' ); ?></strong>
+                    <span class="sh-pro-badge">PRO</span>
+                    <p class="description"><?php esc_html_e( 'Allows an order to hold several independent deposits when a compatible integration or extension is active.', 'securehold-security-deposit-holds' ); ?></p>
+                </div>
+                <a href="<?php echo esc_url( SECUREHOLD_WP_URL_PRICING ); ?>" target="_blank" rel="noopener noreferrer" class="sh-btn sh-btn-primary sh-btn-sm">
+                    <?php esc_html_e( 'Upgrade', 'securehold-security-deposit-holds' ); ?>
+                </a>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php
+        $sh_has_grouping_policy = $sh_multi_hold_pro_ready && class_exists( 'Securehold_Multi_Hold' ) && Securehold_Multi_Hold::has_grouping_policy();
+        $sh_grouping_policies   = $sh_has_grouping_policy ? apply_filters( 'securehold_multi_hold_grouping_policies', array() ) : array();
+        ?>
+        <?php if ( 'multiple_hold_groups' === $hold_structure_display && ! $sh_has_grouping_policy ) : ?>
+        <p class="description" style="margin-top:8px;">
+            <span class="dashicons dashicons-info-outline sh-policy-help-icon"></span>
+            <?php esc_html_e( 'No grouping policy is active yet, so orders still produce a single hold. Compatible policies are provided by integrations and extensions.', 'securehold-security-deposit-holds' ); ?>
+        </p>
+        <?php endif; ?>
+
+        <?php if ( 'multiple_hold_groups' === $hold_structure_display && $sh_has_grouping_policy ) :
+            $sh_active_source_key   = class_exists( 'Securehold_Multi_Hold' ) ? Securehold_Multi_Hold::grouping_source() : '';
+            $sh_active_source_label = $sh_active_source_key;
+            foreach ( (array) $sh_grouping_policies as $sh_policy ) {
+                if ( is_array( $sh_policy ) && isset( $sh_policy['key'] ) && $sh_policy['key'] === $sh_active_source_key ) {
+                    $sh_active_source_label = isset( $sh_policy['label'] ) ? $sh_policy['label'] : $sh_active_source_key;
+                    break;
+                }
+            }
+        ?>
+        <div style="margin-top:8px;">
+            <strong style="font-size:12px; color: var(--sh-gray-600);"><?php esc_html_e( 'Grouping source', 'securehold-security-deposit-holds' ); ?></strong>
+            <p class="description">
+                <?php echo esc_html( $sh_active_source_label ); ?>
+                &mdash;
+                <a href="<?php echo esc_url( add_query_arg( array( 'page' => 'securehold-settings', 'tab' => 'integrations' ), admin_url( 'admin.php' ) ) ); ?>">
+                    <?php esc_html_e( 'Configure in Settings > Integrations', 'securehold-security-deposit-holds' ); ?>
+                </a>
+            </p>
+        </div>
+        <?php endif; ?>
         <div class="sh-divider-gradient"></div>
 
         <!-- Deposit Amount Section -->
@@ -368,32 +461,6 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                     <strong><?php esc_html_e( 'Automation Disabled', 'securehold-security-deposit-holds' ); ?></strong>
                     <p><?php esc_html_e( 'No security deposits will be created automatically. You must click "Create Hold Now" on each order page.', 'securehold-security-deposit-holds' ); ?></p>
                 </div>
-            </div>
-        </div>
-
-        <div class="sh-divider-gradient"></div>
-
-        <!-- MagePeople compatibility bridge (opt-in) -->
-        <h3 class="sh-section-heading">
-            <span class="dashicons dashicons-admin-plugins" style="color: var(--sh-gray-600);"></span>
-            <?php esc_html_e( 'Third-Party Compatibility', 'securehold-security-deposit-holds' ); ?>
-        </h3>
-        <?php $mp_enabled = get_option( 'securehold_magepeople_deposit_enabled', 'no' ); ?>
-        <div style="margin-bottom: 2rem;">
-            <div class="sh-input-field">
-                <label class="sh-toggle-row" style="display:flex;align-items:center;gap:0.75rem;cursor:pointer;">
-                    <input type="checkbox"
-                           name="securehold_magepeople_deposit_enabled"
-                           value="yes"
-                           <?php checked( $mp_enabled, 'yes' ); ?>>
-                    <span class="sh-label-modern" style="margin:0;cursor:pointer;">
-                        <?php esc_html_e( 'Use MagePeople security deposit amounts', 'securehold-security-deposit-holds' ); ?>
-                    </span>
-                </label>
-                <p class="description" style="margin-top:0.5rem;">
-                    <span class="dashicons dashicons-info-outline" style="font-size:14px;width:14px;height:14px;vertical-align:middle;color:var(--sh-gray-400);"></span>
-                    <?php esc_html_e( 'When a Rent Item (Booking and Rental Manager by MagePeople) has a fixed-amount Security Deposit configured, use it automatically instead of requiring a separate SecureHold Product Rule. An explicit SecureHold Product Rule always takes priority over this. Percentage-type MagePeople deposits are not supported yet and are ignored.', 'securehold-security-deposit-holds' ); ?>
-                </p>
             </div>
         </div>
 

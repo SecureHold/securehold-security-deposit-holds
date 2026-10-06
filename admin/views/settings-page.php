@@ -63,6 +63,11 @@ $base_tabs = array(
         'icon'        => 'dashicons-networking',
         'active_keys' => array( 'rule-engine', 'rule-engine-global', 'rule-engine-products', 'rule-engine-categories' ),
     ),
+    'integrations'  => array(
+        'label'       => __( 'Integrations', 'securehold-security-deposit-holds' ),
+        'icon'        => 'dashicons-admin-plugins',
+        'active_keys' => array( 'integrations' ),
+    ),
     'notifications' => array(
         'label'       => __( 'Notifications', 'securehold-security-deposit-holds' ),
         'icon'        => 'dashicons-email',
@@ -163,7 +168,7 @@ if (isset($_POST['securehold_settings_nonce']) && wp_verify_nonce(sanitize_text_
 
             $credential_validation_errors[] = '<strong>' . sprintf(
                 /* translators: 1: field label, 2: comma-separated valid key prefixes */
-                esc_html__( '%1$s: value rejected — must start with %2$s.', 'securehold-security-deposit-holds' ),
+                esc_html__( '%1$s: value rejected, must start with %2$s.', 'securehold-security-deposit-holds' ),
                 esc_html( $meta['label'] ),
                 $prefixes_html
             ) . '</strong>';
@@ -203,6 +208,69 @@ if (isset($_POST['securehold_settings_nonce']) && wp_verify_nonce(sanitize_text_
         if ( in_array( $agg_mode, array( 'per_order', 'per_item_aggregated' ), true ) ) {
             update_option( 'securehold_aggregation_mode', $agg_mode );
         }
+    }
+
+    // Save Hold Structure (Multi-Hold engine). Selecting 'multiple_hold_groups'
+    // here only lifts the admin's own opt-in — Securehold_Multi_Hold::may_create_multiple_groups()
+    // still requires the feature flag AND a registered grouping policy before
+    // any order is actually split.
+    //
+    // Server-side gate: 'multiple_hold_groups' is a PRO capability
+    // ('multi_hold_groups'). A request that tries to persist it without PRO
+    // active is REJECTED — the write is skipped and whatever was already in
+    // the DB is left untouched. This is deliberate: PRO being momentarily
+    // inactive (a license hiccup, a manual deactivate/reactivate, a stray
+    // direct POST) must never destructively downgrade a user's stored
+    // 'multiple_hold_groups' preference to 'single_order_hold'. The runtime
+    // gate (Securehold_Multi_Hold::may_create_multiple_groups(), which itself
+    // checks securehold_feature_enabled('multi_hold_groups')) is what
+    // actually prevents multi-hold creation without PRO — this option's
+    // stored value is never the enforcement point. An explicit, legitimate
+    // choice of 'single_order_hold' (the safe direction) always persists
+    // normally, with or without PRO.
+    if ( isset( $_POST['securehold_hold_structure'] ) ) {
+        $hold_structure = sanitize_text_field( wp_unslash( $_POST['securehold_hold_structure'] ) );
+        if ( in_array( $hold_structure, array( 'single_order_hold', 'multiple_hold_groups' ), true ) ) {
+            if ( 'multiple_hold_groups' !== $hold_structure || securehold_feature_enabled( 'multi_hold_groups' ) ) {
+                update_option( 'securehold_hold_structure', $hold_structure );
+            }
+        }
+    }
+
+    // Save the active Multi-Hold grouping source (Settings > Integrations).
+    // Server-side whitelist: only a slug that is BOTH declared as
+    // multi_hold_capable in the Integrations registry AND actually
+    // registered as a grouping policy (Securehold_Multi_Hold::
+    // declared_grouping_policies()) is accepted — never an arbitrary
+    // string, and never a capable-but-not-yet-registered source (e.g.
+    // Booking Activities today: multi_hold_capable would still be false
+    // there since its status is 'coming_soon', but this double-check is
+    // what keeps a future capable-but-unregistered integration from being
+    // silently selected with no effect either).
+    if ( isset( $_POST['securehold_multi_hold_grouping_source'] ) ) {
+        $source = sanitize_text_field( wp_unslash( $_POST['securehold_multi_hold_grouping_source'] ) );
+
+        $declared_keys = array();
+        if ( class_exists( 'Securehold_Multi_Hold' ) ) {
+            foreach ( Securehold_Multi_Hold::declared_grouping_policies() as $policy ) {
+                $declared_keys[] = $policy['key'];
+            }
+        }
+
+        $capable_keys = array();
+        if ( class_exists( 'Securehold_Integrations_Registry' ) ) {
+            foreach ( Securehold_Integrations_Registry::get_all() as $integration ) {
+                if ( ! empty( $integration['multi_hold_capable'] ) && ! empty( $integration['grouping_source_key'] ) ) {
+                    $capable_keys[] = $integration['grouping_source_key'];
+                }
+            }
+        }
+
+        if ( in_array( $source, $declared_keys, true ) && in_array( $source, $capable_keys, true ) ) {
+            update_option( 'securehold_multi_hold_grouping_source', $source );
+        }
+        // Invalid/unknown source: silently ignored, previous value kept —
+        // no fatal, no silent misconfiguration (mission section 12/14).
     }
 
     // Save Engine Version
@@ -255,8 +323,17 @@ if (isset($_POST['securehold_settings_nonce']) && wp_verify_nonce(sanitize_text_
             'securehold_require_deposit_auth',
             isset( $_POST['securehold_require_deposit_auth'] ) ? '1' : ''
         );
+    }
+
+    // ── Integrations tab ──
+    // Guard: securehold_integrations_tab_submitted is a hidden field always
+    // present on that tab's form, so saving Deposit Rules (or any other tab)
+    // never resets this checkbox to "no" just because it wasn't in that POST.
+    if ( isset( $_POST['securehold_integrations_tab_submitted'] ) ) {
 
         // MagePeople compatibility bridge (checkbox — opt-in, default: disabled).
+        // Same option and logic as before this moved from Deposit Rules >
+        // Third-Party Compatibility onto its own Integrations card.
         update_option(
             'securehold_magepeople_deposit_enabled',
             isset( $_POST['securehold_magepeople_deposit_enabled'] ) ? 'yes' : 'no'
@@ -293,6 +370,16 @@ if (isset($_POST['securehold_settings_nonce']) && wp_verify_nonce(sanitize_text_
                 $telemetry->opt_out();
             }
         }
+
+        // Danger Zone: delete-data-on-uninstall opt-in (checkbox — default:
+        // OFF). Read by uninstall.php as the first of its two required
+        // guards before any table, option, or meta row is removed; see that
+        // file's own comment for the full safety model. Absent ⇒ '' (never
+        // deletes), matching every other checkbox on this tab.
+        update_option(
+            'securehold_delete_data_on_uninstall',
+            isset( $_POST['securehold_delete_data_on_uninstall'] ) ? '1' : ''
+        );
     }
 
     // ── Appearance & Frontend tab ──
@@ -473,7 +560,7 @@ $webhook_url = get_rest_url(null, 'securehold/v1/webhook');
     <div class="sh-alert sh-alert-danger" style="animation: slideInDown 0.3s ease; margin-top: 2rem; border-left: 4px solid #dc2626; background: #fef2f2;">
         <span class="dashicons dashicons-warning" style="color: #dc2626; font-size: 24px;"></span>
         <div>
-            <strong><?php esc_html_e( 'Invalid Stripe credentials — the following fields were not saved:', 'securehold-security-deposit-holds' ); ?></strong>
+            <strong><?php esc_html_e( 'Invalid Stripe credentials: the following fields were not saved.', 'securehold-security-deposit-holds' ); ?></strong>
             <ul style="margin: 0.5rem 0 0; padding-left: 1.2rem;">
             <?php foreach ( $credential_errors as $err ) : ?>
                 <li><?php echo wp_kses( $err, array( 'strong' => array(), 'code' => array() ) ); ?></li>
@@ -549,7 +636,7 @@ $webhook_url = get_rest_url(null, 'securehold/v1/webhook');
                             <?php if ( $mode_status ) : ?>
                                 <?php if ( ! $mode_status['gateway_active'] ) : ?>
                                     <div class="notice notice-warning inline">
-                                        <p><?php esc_html_e( 'WooCommerce Stripe Gateway not detected — mode alignment cannot be verified.', 'securehold-security-deposit-holds' ); ?></p>
+                                        <p><?php esc_html_e( 'WooCommerce Stripe Gateway not detected: mode alignment cannot be verified.', 'securehold-security-deposit-holds' ); ?></p>
                                     </div>
                                 <?php elseif ( ! $mode_status['aligned'] ) : ?>
                                     <div class="notice notice-warning inline">
@@ -656,7 +743,20 @@ $webhook_url = get_rest_url(null, 'securehold/v1/webhook');
                                     <strong><?php esc_html_e( 'Share usage data', 'securehold-security-deposit-holds' ); ?></strong>
                                 </label>
                                 <p class="description" style="margin-top:0.5rem;">
-                                    <?php esc_html_e( 'Sends a small, pseudonymous, daily check-in to secureholdwp.com: SecureHold/WordPress/WooCommerce versions, whether Stripe looks configured, and whether a deposit hold has ever been created — never a domain, email, order, key, or customer data. Off by default; turning this off stops all future check-ins immediately.', 'securehold-security-deposit-holds' ); ?>
+                                    <?php esc_html_e( 'Sends a small, pseudonymous, daily check-in to secureholdwp.com: SecureHold/WordPress/WooCommerce versions, whether Stripe looks configured, and whether a deposit hold has ever been created (never a domain, email, order, key, or customer data). Off by default; turning this off stops all future check-ins immediately.', 'securehold-security-deposit-holds' ); ?>
+                                </p>
+                            </div>
+
+                            <div class="sh-divider-gradient"></div>
+                            <h3 style="margin-top:0; color:#b91c1c;"><?php esc_html_e( 'Danger Zone', 'securehold-security-deposit-holds' ); ?></h3>
+                            <div class="sh-input-field">
+                                <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                                    <input type="checkbox" name="securehold_delete_data_on_uninstall" value="1" <?php checked( get_option( 'securehold_delete_data_on_uninstall', '' ), '1' ); ?>>
+                                    <strong><?php esc_html_e( 'Delete all SecureHold data when uninstalling', 'securehold-security-deposit-holds' ); ?></strong>
+                                </label>
+                                <p class="description" style="margin-top:0.5rem; color:#b91c1c;">
+                                    <span class="dashicons dashicons-warning" style="font-size:16px; width:16px; height:16px; vertical-align:middle;"></span>
+                                    <?php esc_html_e( 'When enabled, deleting this plugin from the Plugins screen permanently removes ALL SecureHold data: every security deposit hold and its history, Stripe/webhook configuration, Product/Category Rules, and every SecureHold order/product field. This cannot be undone. Off by default: uninstalling normally with this box unchecked always preserves your data.', 'securehold-security-deposit-holds' ); ?>
                                 </p>
                             </div>
                         </div>
@@ -803,7 +903,7 @@ $webhook_url = get_rest_url(null, 'securehold/v1/webhook');
                             <?php
                             // FREE preview only — no PRO logic, no settings read or saved.
                             $sh_locked_title       = __( 'Product Rules', 'securehold-security-deposit-holds' );
-                            $sh_locked_description = __( 'Set a different deposit amount, or exclude a product entirely, on a per-product basis — instead of one rule for the whole store.', 'securehold-security-deposit-holds' );
+                            $sh_locked_description = __( 'Set a different deposit amount, or exclude a product entirely, on a per-product basis instead of one rule for the whole store.', 'securehold-security-deposit-holds' );
                             $sh_locked_icon        = 'dashicons-products';
                             include plugin_dir_path( __FILE__ ) . 'partials/pro-locked-panel.php';
                             unset( $sh_locked_title, $sh_locked_description, $sh_locked_icon );
@@ -832,6 +932,10 @@ $webhook_url = get_rest_url(null, 'securehold/v1/webhook');
                 
                 <?php if ($active_tab === 'frontend') : ?>
                     <?php include plugin_dir_path(__FILE__) . 'frontend-tab.php'; ?>
+                <?php endif; ?>
+
+                <?php if ( $active_tab === 'integrations' ) : ?>
+                    <?php include plugin_dir_path( __FILE__ ) . 'integrations-tab.php'; ?>
                 <?php endif; ?>
 
                 <?php

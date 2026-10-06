@@ -329,6 +329,87 @@ class Securehold_Email_Manager {
     }
 
     /**
+     * Stable per-hold key for the anti-double-send guards below.
+     *
+     * A hold context carries its own 'id' once it is more than a transient
+     * amount/currency snapshot (the DB row's primary key). 'default'
+     * preserves the pre-Multi-Hold single guard for any caller that does
+     * not pass one — every call site today still falls in that case except
+     * where explicitly wired to a specific hold row.
+     *
+     * @since 1.4.0 (Multi-Hold engine, emails increment)
+     *
+     * @param object|array|null $hold
+     * @return string
+     */
+    public static function hold_key( $hold ) {
+        if ( is_object( $hold ) && ! empty( $hold->id ) ) {
+            return (string) $hold->id;
+        }
+        if ( is_array( $hold ) && ! empty( $hold['id'] ) ) {
+            return (string) $hold['id'];
+        }
+        return 'default';
+    }
+
+    /**
+     * Whether the anti-double-send guard has already fired for this hold.
+     *
+     * The guard used to be a single scalar timestamp per order: sending
+     * Hold A's email blocked Hold B's email on the same order forever after,
+     * silently. It is now a map keyed by hold_key(), so each hold gets its
+     * own entry. A legacy scalar value — written by a site before this
+     * change — is read as the default group's own entry, so an order
+     * already notified once under the old scheme is not re-notified.
+     *
+     * @since 1.4.0 (Multi-Hold engine, emails increment)
+     *
+     * @param WC_Order           $order
+     * @param string             $meta_key
+     * @param object|array|null  $hold
+     * @return bool
+     */
+    public static function already_sent( $order, $meta_key, $hold ) {
+        $log = self::sent_log( $order, $meta_key );
+        return isset( $log[ self::hold_key( $hold ) ] );
+    }
+
+    /**
+     * Record that this hold's email has been sent.
+     *
+     * Caller is still responsible for calling $order->save() — this only
+     * stages the meta, consistent with how the rest of the order object is
+     * already being mutated at the call site.
+     *
+     * @since 1.4.0 (Multi-Hold engine, emails increment)
+     *
+     * @param WC_Order           $order
+     * @param string             $meta_key
+     * @param object|array|null  $hold
+     * @return void
+     */
+    public static function mark_sent( $order, $meta_key, $hold ) {
+        $log                             = self::sent_log( $order, $meta_key );
+        $log[ self::hold_key( $hold ) ]  = current_time( 'mysql' );
+        $order->update_meta_data( $meta_key, $log );
+    }
+
+    /**
+     * @param WC_Order $order
+     * @param string   $meta_key
+     * @return array<string,string>  hold_key => timestamp
+     */
+    private static function sent_log( $order, $meta_key ) {
+        $raw = $order->get_meta( $meta_key, true );
+
+        if ( is_array( $raw ) ) {
+            return $raw;
+        }
+
+        return $raw ? array( 'default' => $raw ) : array();
+    }
+
+    /**
      * Log a debug message (WP_DEBUG only).
      *
      * @param string $message

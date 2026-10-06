@@ -22,7 +22,7 @@ class Securehold_DB_Migrator {
      * The repository only ever wrote '1.1.0', so that is the floor. No earlier
      * migration is invented here to fill a history that does not exist.
      */
-    const TARGET_VERSION = '1.2.0';
+    const TARGET_VERSION = '1.4.0';
 
     const VERSION_OPTION = 'securehold_db_version';
     const FAILURE_OPTION = 'securehold_db_migration_failed';
@@ -116,6 +116,18 @@ class Securehold_DB_Migrator {
             }
         }
 
+        if ( version_compare( $from, '1.3.0', '<' ) ) {
+            if ( ! self::migrate_to_130() ) {
+                return false;
+            }
+        }
+
+        if ( version_compare( $from, '1.4.0', '<' ) ) {
+            if ( ! self::migrate_to_140() ) {
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -190,6 +202,138 @@ class Securehold_DB_Migrator {
         }
 
         return true;
+    }
+
+    /**
+     * 1.3.0 — Multi-Hold engine, Phase A: carry a Hold Group identity on
+     * securehold_holds without touching a single existing row.
+     *
+     * Adds two nullable columns:
+     *   - group_key     opaque identifier of a logical hold within an order.
+     *                   NULL means "the implicit default group" — exactly what
+     *                   every historical row and every Single-Hold-per-Order
+     *                   commande already is, so no backfill is needed or run.
+     *   - scheduled_for when a specific group is due to fire, for a scheduler
+     *                   that can look up one group's event without scanning
+     *                   every order (Phase D, not built here).
+     *
+     * Plus an (order_id, group_key) index so "all holds of this order" and
+     * "the hold for this specific group" both stay index-only lookups once
+     * an order can have more than one row. order_id keeps its own single-column
+     * index too — nothing that filters by order_id alone regresses.
+     *
+     * Additive only: no row is read, written or deleted, no existing column or
+     * index is touched, and a failure here downgrades log/diagnostic UIs, not
+     * deposit creation, capture or release, none of which read these columns
+     * yet.
+     *
+     * @return bool
+     */
+    private static function migrate_to_130() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'securehold_holds';
+
+        if ( ! self::table_exists( $table ) ) {
+            self::report( 'Skipping hold-group migration: table absent', array( 'table' => $table ) );
+            return true;
+        }
+
+        if ( ! self::column_exists( $table, 'group_key' ) ) {
+            $result = $wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN `group_key` VARCHAR(191) NULL DEFAULT NULL AFTER `order_id`" );
+
+            if ( $result === false ) {
+                self::report( 'Could not add group_key column', array(
+                    'table' => $table,
+                    'error' => self::last_error(),
+                ) );
+                return false;
+            }
+        }
+
+        if ( ! self::column_exists( $table, 'scheduled_for' ) ) {
+            $result = $wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN `scheduled_for` DATETIME NULL DEFAULT NULL AFTER `expires_at`" );
+
+            if ( $result === false ) {
+                self::report( 'Could not add scheduled_for column', array(
+                    'table' => $table,
+                    'error' => self::last_error(),
+                ) );
+                return false;
+            }
+        }
+
+        if ( ! self::index_exists( $table, 'order_id_group' ) ) {
+            $result = $wpdb->query( "ALTER TABLE `{$table}` ADD INDEX `order_id_group` (`order_id`, `group_key`)" );
+
+            if ( $result === false ) {
+                self::report( 'Could not add order_id_group index', array(
+                    'table' => $table,
+                    'error' => self::last_error(),
+                ) );
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * 1.4.0 — Multi-Hold engine, logs increment: re-index hold_id on
+     * securehold_logs now that securehold_log() actually writes it.
+     *
+     * 1.2.0 dropped the hold_id index because nothing ever populated the
+     * column. securehold_log() now does (helpers.php), so a row can be found
+     * by the one hold it belongs to without a full-table scan — exactly what
+     * Deposit Details needs to show Hold A's log lines without Hold B's.
+     *
+     * A row logged before this migration keeps hold_id = NULL; nothing here
+     * back-fills it; it stays reachable by order_id and created_at as before.
+     * Additive only: one index added, nothing read, written or deleted.
+     *
+     * @return bool
+     */
+    private static function migrate_to_140() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'securehold_logs';
+
+        if ( ! self::table_exists( $table ) ) {
+            self::$logging_unsafe = true;
+            self::report( 'Skipping log hold_id index migration: table absent', array( 'table' => $table ) );
+            return true;
+        }
+
+        if ( ! self::index_exists( $table, 'hold_id_created' ) ) {
+            $result = $wpdb->query( "ALTER TABLE `{$table}` ADD INDEX `hold_id_created` (`hold_id`, `created_at`, `id`)" );
+
+            if ( $result === false ) {
+                self::report( 'Could not add log hold_id index', array(
+                    'table' => $table,
+                    'error' => self::last_error(),
+                ) );
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param string $table  Fully prefixed table name.
+     * @param string $column Column name.
+     * @return bool
+     */
+    public static function column_exists( $table, $column ) {
+        global $wpdb;
+
+        $found = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s",
+            $table,
+            $column
+        ) );
+
+        return (int) $found > 0;
     }
 
     /**

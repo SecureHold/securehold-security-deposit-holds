@@ -50,6 +50,7 @@ class Securehold_Core {
         $plugin_notices = new Securehold_Admin_Notices();
         $this->loader->add_action('admin_notices', $plugin_notices, 'show_configuration_warnings');
         $this->loader->add_action('admin_notices', $plugin_notices, 'show_failed_hold_warning');
+        $this->loader->add_action('admin_post_securehold_dismiss_hold_failure', $plugin_notices, 'handle_dismiss_hold_failure');
 
         // Opt-in usage telemetry — self-registers its own hooks (notice,
         // AJAX, cron), same pattern as PRO's Securehold_License_Manager.
@@ -77,7 +78,13 @@ class Securehold_Core {
         // 3. Déclencheur générique de changement de statut (Pour la stratégie "By Status")
         // Note: create_hold_for_order accepte $order_id en 1er argument, ce qui correspond au hook WC
         $this->loader->add_action('woocommerce_order_status_changed', $scheduler, 'create_hold_for_order', 10, 1);
-        
+
+        // 4. Fast-path retry for 'missing_stripe_data': fires the moment WooCommerce
+        // Stripe finishes persisting the payment method/charge data, instead of
+        // waiting for the 30s WP-Cron fallback below to tick. Purely additive —
+        // that scheduled fallback stays registered and unchanged.
+        $this->loader->add_action('wc_gateway_stripe_process_response', $scheduler, 'maybe_fast_retry_missing_stripe_data', 10, 2);
+
         // Deposit Failure Gate — reacts to hold failures after the Scheduler runs.
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-securehold-wp-deposit-gate.php';
         new Securehold_Deposit_Gate();

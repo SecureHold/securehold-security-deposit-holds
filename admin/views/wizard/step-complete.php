@@ -52,6 +52,14 @@ $docs_url       = SECUREHOLD_WP_URL_DOCS;
                 <?php esc_html_e('View Docs', 'securehold-security-deposit-holds'); ?>
             </a>
         </div>
+
+        <div style="grid-column:1 / -1;border:1px solid #ddd;padding:20px;border-radius:8px;">
+            <h4><span class="dashicons dashicons-external"></span> <?php esc_html_e('Stripe Dashboard (optional)', 'securehold-security-deposit-holds'); ?></h4>
+            <p><?php esc_html_e('Manage SecureHold deposits directly from the Stripe Dashboard with the SecureHold Stripe App. SecureHold works without it.', 'securehold-security-deposit-holds'); ?></p>
+            <a href="<?php echo esc_url(SECUREHOLD_WP_URL_STRIPE_APP); ?>" class="sh-btn sh-btn-secondary" target="_blank" rel="noopener">
+                <?php esc_html_e('Install Stripe App', 'securehold-security-deposit-holds'); ?>
+            </a>
+        </div>
     </div>
 
     <div class="wizard-help-box securehold-test-section" style="background: linear-gradient(135deg, var(--sh-primary, #2563eb) 0%, #1e40af 100%); color: white; position: relative; overflow: hidden; border: none; padding: 30px;">

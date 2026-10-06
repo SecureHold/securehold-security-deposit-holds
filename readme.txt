@@ -4,7 +4,7 @@ Tags: stripe, woocommerce, security deposit, pre-authorization, rental
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 3.4.10
+Stable tag: 3.5.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -223,7 +223,7 @@ This plugin connects to the Stripe API to create and manage payment authorizatio
 
 **SecureHold Usage Telemetry (opt-in)**
 
-This plugin can optionally send minimal pseudonymous usage data to secureholdwp.com (SecureHold's own servers). This is off by default and strictly opt-in — nothing is sent unless you enable "Share usage data" in Connection settings, and you can turn it off at any time, which stops all future check-ins immediately.
+This plugin can optionally send minimal pseudonymous usage data to secureholdwp.com (SecureHold's own servers). This is off by default and strictly opt-in: nothing is sent unless you enable "Share usage data" in Connection settings, and you can turn it off at any time, which stops all future check-ins immediately.
 
 * Service: SecureHold usage telemetry
 * Endpoint: https://secureholdwp.com
@@ -237,6 +237,30 @@ This plugin can optionally send minimal pseudonymous usage data to secureholdwp.
 When the plugin is deactivated, an optional feedback form appears in the WordPress admin. If the form is submitted, the following data is sent by email to support@secureholdwp.com: site URL, plugin version, deactivation reason, and any additional details provided. Submission is entirely optional. Clicking "Skip and Deactivate" deactivates the plugin without sending any data.
 
 == Changelog ==
+
+= 3.5.1 =
+
+* Added: the optional SecureHold Stripe App on Settings > Integrations. SecureHold works without it.
+* Added: an optional Stripe App suggestion on the final step of the setup wizard.
+* Added: a direct link to install SecureHold Security Deposits from the Stripe App Marketplace.
+
+= 3.5.0 =
+
+* Added: WooCommerce Native Multi-Hold. With SecureHold PRO active, an order can now produce one independent security deposit hold per eligible order item (Hold Structure: Multiple Hold Groups, Grouping source: WooCommerce Native) instead of a single hold per order. Existing single-hold orders and installs are unaffected unless this is explicitly enabled.
+* Added: group-aware scheduling, retry, and admin actions throughout the hold-creation engine, so each Hold Group on a Multi-Hold order is created, retried, captured, and released independently of the others.
+* Added: a fast retry for the "missing Stripe data" failure. SecureHold now also retries immediately once WooCommerce Stripe finishes persisting the payment method/charge data (via its own wc_gateway_stripe_process_response hook), instead of only waiting for the existing 30 second scheduled fallback.
+* Added: the Deposit Details page now shows the Applied Configuration that was actually in effect when each individual hold was created, even on a Multi-Hold order where different Hold Groups used different rules.
+* Improved: Settings > Integrations now shows what SecureHold can build Hold Groups from (WooCommerce Native, MagePeople, Booking Activities) and their current status in one place, in the main settings column.
+* Changed: the "Use MagePeople security deposit amounts" option moved from Deposit Rules > Third-Party Compatibility onto its own MagePeople card on Settings > Integrations. Same setting, same behavior, no migration needed.
+* Note: Booking Activities is listed on Settings > Integrations as Coming Soon. Its grouping code is not loaded or active in this release, and it introduces no new behavior.
+* Improved: uninstall now requires an explicit opt-in ("Danger Zone" in Connection settings) and only runs on the plugin's own canonical install folder, so a duplicate or misnamed copy of the plugin can never delete a working install's data by mistake. Data removal itself now targets an exact, enumerated list of SecureHold's own meta keys instead of a broader pattern match.
+* Improved: Multi-Hold settings (Hold Structure, Grouping source) are preserved, not silently reset, if SecureHold PRO is temporarily deactivated and reactivated later.
+* Added: the "SecureHold: deposits that were never placed" admin notice now has a Dismiss action per order. Dismissing hides that specific failure from the notice without deleting any log, order note, or hold record; a genuinely new, later failure on the same order is never hidden by an old dismissal.
+* Various admin UI refinements to Settings and the Deposit Details page.
+
+= 3.4.11 =
+
+* Fix: MagePeople fixed security deposits are now correctly used for each rental item in Per Item Aggregated mode.
 
 = 3.4.10 =
 

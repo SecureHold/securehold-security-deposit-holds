@@ -82,15 +82,27 @@ function securehold_log($message, $data = array(), $severity = 'info') {
 
     // Guard: table may be absent on a partially installed or freshly activated site.
     if ( $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $wpdb->esc_like( $table_name ) ) ) === $table_name ) {
-        // Auto-extract order_id from data array when available (populates indexed column)
+        // Auto-extract order_id and hold_id from the data array when available,
+        // so each row can be found by either indexed column. hold_id was part
+        // of the schema from the start but never populated here — every caller
+        // that already passes it (Securehold_Hold_State::log(), the webhook
+        // handlers) had it silently dropped into the JSON blob only, with no
+        // indexed way to ask "every log row for this one hold". Multi-Hold
+        // engine, logs increment.
         $log_order_id = null;
         if (is_array($log_data) && !empty($log_data['order_id'])) {
             $log_order_id = intval($log_data['order_id']);
         }
 
+        $log_hold_id = null;
+        if (is_array($log_data) && !empty($log_data['hold_id'])) {
+            $log_hold_id = intval($log_data['hold_id']);
+        }
+
         $wpdb->insert(
             $table_name,
             array(
+                'hold_id'    => $log_hold_id,
                 'order_id'   => $log_order_id,
                 'event_type' => 'system',
                 'message'    => substr($message, 0, 255),
@@ -98,7 +110,7 @@ function securehold_log($message, $data = array(), $severity = 'info') {
                 'severity'   => $severity,
                 'created_at' => current_time('mysql')
             ),
-            array('%d', '%s', '%s', '%s', '%s', '%s')
+            array('%d', '%d', '%s', '%s', '%s', '%s', '%s')
         );
     }
 }
@@ -236,7 +248,8 @@ if ( ! function_exists( 'securehold_feature_enabled' ) ) {
      *
      * @since 5.6.0
      * @param  string $feature  Feature slug: 'rule_engine', 'deposit_automation',
-     *                          'frontend', 'dashboard', 'logs', 'tools', 'extensions'.
+     *                          'frontend', 'dashboard', 'logs', 'tools', 'extensions',
+     *                          'multi_hold_groups'.
      *                          Unknown slugs return false by default.
      * @return bool
      */
@@ -249,6 +262,10 @@ if ( ! function_exists( 'securehold_feature_enabled' ) ) {
             'logs'               => false,
             'tools'              => false,
             'extensions'         => false,
+            // Capability to CREATE new Multi-Hold Groups (PRO-only). Never
+            // gates reading/administering Hold Groups that already exist —
+            // see Securehold_Multi_Hold::may_create_multiple_groups().
+            'multi_hold_groups'  => false,
         );
 
         $default = isset( $defaults[ $feature ] ) ? $defaults[ $feature ] : false;

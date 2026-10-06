@@ -100,8 +100,10 @@ class Securehold_Email_Deposit_Authorized extends WC_Email {
             return;
         }
 
-        // ── Guard 5: Anti-double-send ─────────────────────────────────
-        if ( $this->object->get_meta( self::SENT_META, true ) ) {
+        // ── Guard 5: Anti-double-send, per hold ────────────────────────
+        // Keyed by which hold this is (Securehold_Email_Manager::hold_key()),
+        // not just by the order: Hold A's send must never suppress Hold B's.
+        if ( Securehold_Email_Manager::already_sent( $this->object, self::SENT_META, $hold ) ) {
             $this->restore_locale();
             return;
         }
@@ -131,13 +133,15 @@ class Securehold_Email_Deposit_Authorized extends WC_Email {
             );
 
             if ( $sent ) {
-                // Mark as sent — prevents duplicate on re-trigger.
-                $this->object->update_meta_data( self::SENT_META, current_time( 'mysql' ) );
+                // Mark as sent for THIS hold — prevents duplicate on re-trigger
+                // without blocking a different hold's own send.
+                Securehold_Email_Manager::mark_sent( $this->object, self::SENT_META, $hold );
                 $this->object->save();
 
                 if ( function_exists( 'securehold_log' ) ) {
                     securehold_log( 'Email sent: deposit_authorized', array(
                         'order_id'  => $order_id,
+                        'hold_id'   => Securehold_Email_Manager::hold_key( $hold ) !== 'default' ? Securehold_Email_Manager::hold_key( $hold ) : null,
                         'recipient' => $this->recipient,
                     ), 'info' );
                 }

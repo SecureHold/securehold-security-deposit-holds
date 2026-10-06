@@ -162,9 +162,10 @@ class Securehold_Admin_Notices {
         $orders = array();
         foreach ( $order_ids as $order_id ) {
             $order = wc_get_order( $order_id );
-            if ( $order ) {
-                $orders[] = $order;
+            if ( ! $order || self::is_failure_dismissed( $order ) ) {
+                continue;
             }
+            $orders[] = $order;
             if ( count( $orders ) >= 20 ) {
                 break;
             }
@@ -208,11 +209,128 @@ class Securehold_Admin_Notices {
                         <?php if ( $reason ) : ?>
                             &mdash; <code><?php echo esc_html( $reason ); ?></code>
                         <?php endif; ?>
+                        <?php
+                        $dismiss_url = wp_nonce_url(
+                            admin_url( 'admin-post.php?action=securehold_dismiss_hold_failure&order_id=' . $order->get_id() ),
+                            'securehold_dismiss_hold_failure_' . $order->get_id()
+                        );
+                        ?>
+                        &mdash;
+                        <a href="<?php echo esc_url( $dismiss_url ); ?>"
+                           style="font-size:12px;"
+                           onclick="return confirm('<?php echo esc_js( __( 'Dismiss this notice for this order? The error stays visible on the order and in the logs — only this banner entry is hidden.', 'securehold-security-deposit-holds' ) ); ?>');">
+                            <?php esc_html_e( 'Dismiss', 'securehold-security-deposit-holds' ); ?>
+                        </a>
                     </li>
                 <?php endforeach; ?>
             </ul>
         </div>
         <?php
+    }
+
+    /**
+     * Identity of a '_securehold_hold_failed' occurrence, used to tell "the
+     * failure just dismissed" apart from "a new one that happens to look
+     * similar".
+     *
+     * Since 3.5.0, record_hold_failure() stamps a 'failure_id' (wp_generate_uuid4())
+     * fresh on every call — that is the identity, full stop: two failures
+     * can never share one, however close in time or however identical their
+     * code/detail (Multi-Hold and the fast-path retry both make that a real
+     * scenario, not a theoretical one).
+     *
+     * Legacy fallback only: an order that failed before this field existed
+     * has no 'failure_id' and is never migrated (per instructions). For that
+     * case alone, an md5(at|code|detail) fingerprint stands in — still not
+     * perfectly collision-proof at second precision, but no worse than
+     * dismissing did before 'failure_id' existed, and it only ever applies
+     * to a failure recorded before this release.
+     *
+     * @since 3.5.0
+     * @param array $failure The '_securehold_hold_failed' value.
+     * @return string Empty string when there is nothing to identify.
+     */
+    private static function failure_identity( $failure ) {
+        if ( ! is_array( $failure ) || empty( $failure['at'] ) ) {
+            return '';
+        }
+
+        if ( ! empty( $failure['failure_id'] ) ) {
+            return 'id:' . $failure['failure_id'];
+        }
+
+        // Legacy failure recorded before 'failure_id' existed.
+        return 'fp:' . md5(
+            $failure['at'] . '|' .
+            ( isset( $failure['code'] ) ? $failure['code'] : '' ) . '|' .
+            ( isset( $failure['detail'] ) ? $failure['detail'] : '' )
+        );
+    }
+
+    /**
+     * AJAX-free acknowledgment for one order's current hold-failure entry on
+     * the banner above. Never deletes anything: it stamps the identity of
+     * which exact failure was acknowledged (see failure_identity()), so the
+     * banner can compare "current failure" against "last dismissed failure"
+     * and only hide a match. Any later call to record_hold_failure() mints a
+     * brand new 'failure_id' and therefore resurfaces automatically — see
+     * is_failure_dismissed().
+     *
+     * @since 3.5.0
+     * @return void
+     */
+    public function handle_dismiss_hold_failure() {
+        $order_id = isset( $_GET['order_id'] ) ? absint( $_GET['order_id'] ) : 0;
+
+        check_admin_referer( 'securehold_dismiss_hold_failure_' . $order_id );
+
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            wp_die( esc_html__( 'You do not have permission to do this.', 'securehold-security-deposit-holds' ), 403 );
+        }
+
+        $order = $order_id ? wc_get_order( $order_id ) : false;
+
+        if ( $order ) {
+            $identity = self::failure_identity( $order->get_meta( '_securehold_hold_failed' ) );
+
+            // Nothing to acknowledge (already resolved / never failed) — a
+            // no-op, not an error, so a stale link never wp_die()s.
+            if ( '' !== $identity ) {
+                $order->update_meta_data( '_securehold_hold_failed_dismissed_id', $identity );
+                $order->save();
+            }
+        }
+
+        // wp_get_referer() only ever returns this site's own admin referer
+        // (WordPress validates it internally); wp_safe_redirect() checks the
+        // host again regardless. Neither reads an arbitrary user-supplied
+        // redirect_to-style URL.
+        wp_safe_redirect( wp_get_referer() ? wp_get_referer() : admin_url( 'admin.php?page=securehold' ) );
+        exit;
+    }
+
+    /**
+     * Whether this order's CURRENT '_securehold_hold_failed' entry is the
+     * exact one an admin already dismissed.
+     *
+     * Compared by failure_identity() — the 'failure_id' UUID minted fresh by
+     * every record_hold_failure() call (legacy fingerprint fallback only for
+     * a failure recorded before 3.5.0). record_hold_failure() overwrites
+     * '_securehold_hold_failed' wholesale on every failure, so any later
+     * failure carries a new identity and the banner is never blindly
+     * suppressed for a new problem.
+     *
+     * @param WC_Order $order
+     * @return bool
+     */
+    private static function is_failure_dismissed( $order ) {
+        $identity = self::failure_identity( $order->get_meta( '_securehold_hold_failed' ) );
+
+        if ( '' === $identity ) {
+            return false; // Nothing to identify — never hide blindly.
+        }
+
+        return $order->get_meta( '_securehold_hold_failed_dismissed_id' ) === $identity;
     }
 
     /**

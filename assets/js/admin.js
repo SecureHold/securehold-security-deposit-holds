@@ -1172,6 +1172,46 @@ jQuery(document).ready(function($) {
         });
     });
 
+    // Cancel Schedule — targets exactly one Hold Group's cron; every other
+    // group on the same order (visible or not) is left untouched server-side.
+    $(document).on('click', '.sh-btn-cancel-schedule', function(e) {
+        e.preventDefault();
+        var $btn = $(this);
+        var depositId = $btn.data('id');
+
+        var i18n = (typeof secureholdAdminParams !== 'undefined' && secureholdAdminParams.i18n) ? secureholdAdminParams.i18n : {};
+        var confirmMsg = i18n.confirmCancelSchedule || 'Cancel this scheduled security deposit? It will not be created automatically anymore.';
+
+        if (!confirm(confirmMsg)) {
+            return;
+        }
+
+        var originalText = $btn.html();
+        $btn.prop('disabled', true).html('<span class="dashicons dashicons-update" style="animation:spin 1s infinite linear; vertical-align:middle;"></span>');
+
+        $.ajax({
+            url: secureholdAdminParams.ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'securehold_cancel_schedule',
+                nonce: secureholdAdminParams.nonces.cancelSchedule,
+                deposit_id: depositId
+            },
+            success: function(r) {
+                if (r.success) {
+                    location.reload();
+                } else {
+                    alert(r.data.message || 'Cancel failed.');
+                    $btn.prop('disabled', false).html(originalText);
+                }
+            },
+            error: function() {
+                alert(i18n.connectionError || 'Connection error');
+                $btn.prop('disabled', false).html(originalText);
+            }
+        });
+    });
+
     // ============================================
     // 4C. KEBAB MENU (3-dots dropdown) — Deposits Table
     // ============================================

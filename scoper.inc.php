@@ -10,7 +10,7 @@ use Isolated\Symfony\Component\Finder\Finder;
  * Targets: Stripe PHP SDK (vendor/stripe/stripe-php/) and the four source files
  *          that contain direct \Stripe\* references.
  *
- * Run from the securehold-wp/ directory:
+ * Run from the securehold-stripe-deposits/ directory:
  *   php vendor/bin/php-scoper add-prefix --output-dir=../build/scoped-wp --force
  *
  * The output directory contains ONLY the processed files listed in finders below.

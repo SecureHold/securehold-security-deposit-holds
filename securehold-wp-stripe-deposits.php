@@ -3,7 +3,7 @@
  * Plugin Name:       SecureHold Security Deposit Holds with Stripe for WooCommerce
  * Plugin URI:        https://secureholdwp.com
  * Description:       Automatically create Stripe pre-authorizations (security deposits) for WooCommerce bookings without charging customers. Perfect for vacation rentals, equipment rentals, and service bookings.
- * Version:           3.4.10
+ * Version:           3.5.1
  * Author:            SecureHold WP
  * License:           GPL-2.0+
  * License URI:       http://www.gnu.org/licenses/gpl-2.0.txt
@@ -32,7 +32,7 @@ add_action( 'before_woocommerce_init', function() {
 } );
 
 // Plugin version
-define('SECUREHOLD_VERSION', '3.4.10');
+define('SECUREHOLD_VERSION', '3.5.1');
 
 /**
  * Opt-in usage telemetry endpoint. Never contacted unless an administrator
@@ -56,6 +56,7 @@ defined( 'SECUREHOLD_WP_SUPPORT_EMAIL' )              || define( 'SECUREHOLD_WP_
 defined( 'SECUREHOLD_WP_URL_DOCS_GETTING_STARTED' )   || define( 'SECUREHOLD_WP_URL_DOCS_GETTING_STARTED',   'https://secureholdwp.com/docs/#getting-started' );
 defined( 'SECUREHOLD_WP_URL_DOCS_CONFIGURE_DEPOSITS' )|| define( 'SECUREHOLD_WP_URL_DOCS_CONFIGURE_DEPOSITS','https://secureholdwp.com/docs/#configure-deposits' );
 defined( 'SECUREHOLD_WP_URL_DOCS_TROUBLESHOOTING' )   || define( 'SECUREHOLD_WP_URL_DOCS_TROUBLESHOOTING',   'https://secureholdwp.com/docs/#troubleshooting' );
+defined( 'SECUREHOLD_WP_URL_STRIPE_APP' )              || define( 'SECUREHOLD_WP_URL_STRIPE_APP',              'https://marketplace.stripe.com/apps/securehold-security-deposits' );
 
 /**
  * Load the bundled Stripe PHP SDK.
@@ -123,6 +124,59 @@ require_once SECUREHOLD_PLUGIN_DIR . 'includes/class-securehold-wp-error-handler
  * @since 4.0.0
  */
 require_once SECUREHOLD_PLUGIN_DIR . 'includes/class-securehold-wp-date-resolver.php';
+
+/**
+ * Load the Multi-Hold engine's native "Hold Structure" option / rollout gate.
+ * @since 1.4.0
+ */
+require_once SECUREHOLD_PLUGIN_DIR . 'includes/class-securehold-wp-multi-hold.php';
+
+/**
+ * Load the Booking Integrations layer — generic infrastructure only
+ * (normalized booking value object, provider interface, integration
+ * manager). This infra has no effect on any commande by itself: it only
+ * defines shapes and a provider registry with nothing registered in it.
+ * @since 1.4.0
+ */
+require_once SECUREHOLD_PLUGIN_DIR . 'includes/booking-integrations/class-securehold-normalized-booking.php';
+require_once SECUREHOLD_PLUGIN_DIR . 'includes/booking-integrations/interface-securehold-booking-provider.php';
+require_once SECUREHOLD_PLUGIN_DIR . 'includes/booking-integrations/class-securehold-booking-integration-manager.php';
+
+/**
+ * NOT loaded/registered in this release: the Booking Activities grouping
+ * policy and provider adapter. This is deliberate — the Booking Activities
+ * integration is still pending Yoan's review and must ship in a later
+ * release, not this one. The code is kept in the repo (see
+ * includes/booking-integrations/class-securehold-booking-grouping-policy.php
+ * and includes/booking-integrations/providers/class-securehold-booking-activities-provider.php)
+ * so re-enabling it later is a two-line change, but until then:
+ *   - no 'bookacti_*' hook is ever registered by SecureHold;
+ *   - Securehold_Multi_Hold::has_grouping_policy() has nothing to return,
+ *     so may_create_multiple_groups() stays false on this axis regardless
+ *     of the "Hold Structure" setting or PRO's own gate.
+ * Since the WooCommerce Native Multi-Hold increment, PRO registers its own
+ * grouping policy (Securehold_Pro_Woocommerce_Native_Grouping_Policy) as the
+ * default active grouping_source() — so has_grouping_policy() can be true
+ * without Booking Activities. This block staying commented out only means
+ * Booking Activities specifically can never become the active source yet.
+ * @since 1.4.0
+ */
+// require_once SECUREHOLD_PLUGIN_DIR . 'includes/booking-integrations/class-securehold-booking-grouping-policy.php';
+// require_once SECUREHOLD_PLUGIN_DIR . 'includes/booking-integrations/providers/class-securehold-booking-activities-provider.php';
+// add_action( 'plugins_loaded', function () {
+//     Securehold_Booking_Grouping_Policy::register();
+//     Securehold_Booking_Activities_Provider::register();
+// }, 20 );
+
+/**
+ * Integrations registry (Settings > Integrations page). Declaring
+ * WooCommerce/MagePeople/Booking Activities here has no side effect beyond
+ * making their cards available to the admin page template — no hook of
+ * theirs is touched.
+ * @since 3.5.0
+ */
+require_once SECUREHOLD_PLUGIN_DIR . 'includes/class-securehold-wp-integrations-registry.php';
+Securehold_Integrations_Registry::register_core_integrations();
 
 /**
  * Load checkout handler (forces payment method saving)

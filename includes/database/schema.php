@@ -15,6 +15,7 @@ class Securehold_DB_Schema {
         $sql_holds = "CREATE TABLE $table_holds (
             id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             order_id bigint(20) UNSIGNED NOT NULL,
+            group_key varchar(191) DEFAULT NULL,
             customer_id varchar(255) NOT NULL,
             intent_id varchar(255) NOT NULL,
             payment_method_id varchar(255) NOT NULL,
@@ -26,12 +27,14 @@ class Securehold_DB_Schema {
             captured_at datetime DEFAULT NULL,
             released_at datetime DEFAULT NULL,
             expires_at datetime DEFAULT NULL,
+            scheduled_for datetime DEFAULT NULL,
             notes text DEFAULT NULL,
             metadata longtext DEFAULT NULL,
             created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY order_id (order_id),
+            KEY order_id_group (order_id, group_key),
             KEY customer_id (customer_id),
             KEY intent_id (intent_id),
             KEY status (status)
@@ -50,6 +53,7 @@ class Securehold_DB_Schema {
             created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY order_id_created (order_id, created_at, id),
+            KEY hold_id_created (hold_id, created_at, id),
             KEY severity_id (severity, id),
             KEY created_at_id (created_at, id)
         ) $charset_collate;";

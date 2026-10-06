@@ -42,6 +42,34 @@ $currency_symbol = get_woocommerce_currency_symbol( $currency );
 // Stripe config (no secrets)
 $stripe_mode = get_option('securehold_stripe_mode', 'test');
 
+// ── This hold's own frozen snapshot, if it has one ──
+// A Multi-Hold order (Hold Structure = Multiple Hold Groups) has several
+// deposit rows sharing one $order, each with its own group_key. The order
+// -level '_securehold_*' metas below are written once per group at hold
+// -creation time (Securehold_Scheduler::run_hold_creation()) and so only
+// ever reflect whichever group was created/authorized LAST — every other
+// group's detail page would otherwise show that group's configuration
+// instead of its own. A grouping policy that resolves its own per-item
+// config (currently: Securehold_Pro_Woocommerce_Native_Grouping_Policy)
+// freezes it into THIS row's own 'metadata' column under 'applied_config'
+// at creation time, so it survives a later edit to the underlying rule and
+// is never re-derived live. Absent for legacy/default-group rows (no
+// group_key, or created before this snapshot existed) — those keep using
+// the order-level metas exactly as before.
+$dd_group_snapshot   = null;
+$dd_this_order_item_id = null; // this hold's own WooCommerce order item, when known — used to keep the Activity Timeline scoped to this group.
+if ( ! empty( $deposit->group_key ) && ! empty( $deposit->metadata ) ) {
+    $dd_decoded_metadata = json_decode( $deposit->metadata, true );
+    if ( is_array( $dd_decoded_metadata ) ) {
+        if ( ! empty( $dd_decoded_metadata['applied_config'] ) && is_array( $dd_decoded_metadata['applied_config'] ) ) {
+            $dd_group_snapshot = $dd_decoded_metadata['applied_config'];
+        }
+        if ( isset( $dd_decoded_metadata['order_item_id'] ) ) {
+            $dd_this_order_item_id = (int) $dd_decoded_metadata['order_item_id'];
+        }
+    }
+}
+
 // ── Resolve configuration via centralized Config Resolver ──
 // Priority: Product Rule > Category Rule > Global Settings
 if ( ! class_exists( 'Securehold_Config_Resolver' ) && defined( 'SECUREHOLD_PLUGIN_DIR' ) ) {
@@ -74,17 +102,44 @@ if ( $order_exists ) {
     );
 }
 
-$applied_timing          = $applied_config['timing'];
-$applied_source          = $applied_config['source'];
-$applied_deposit_amount  = $applied_config['deposit_amount'];
-$applied_date_field_key  = $applied_config['date_field_key'];
-$applied_sched_days      = $applied_config['scheduled_days'];
-$applied_sched_dir       = $applied_config['scheduled_direction'];
-$applied_delay_days      = $applied_config['delay_days'];
-$applied_trigger_status  = $applied_config['trigger_status'];
-$applied_conflict_info   = isset( $applied_config['conflict_info'] ) ? $applied_config['conflict_info'] : null;
-$applied_policy          = isset( $applied_config['policy'] ) ? $applied_config['policy'] : 'priority_chain';
-$applied_explain         = isset( $applied_config['explain'] ) ? $applied_config['explain'] : null;
+if ( null !== $dd_group_snapshot ) {
+    // This hold has its own frozen per-group snapshot — use it instead of
+    // the order-wide live resolution, which cannot know which group_key
+    // this specific page is for. No "explain" candidate list exists for a
+    // frozen single-item snapshot (nothing to re-derive from Stripe
+    // Config Resolver without recomputing live), so the modal's
+    // "All Candidates" / conflict sections simply don't render for these
+    // rows — the "Applied Rule" summary and "Why this rule?" sections,
+    // which only need $applied_source/$applied_timing/$applied_deposit_amount,
+    // still do.
+    $applied_timing          = $dd_group_snapshot['timing'];
+    $applied_source          = $dd_group_snapshot['source'];
+    $applied_deposit_amount  = $dd_group_snapshot['deposit_amount'];
+    $applied_date_field_key  = $dd_group_snapshot['date_field_key'];
+    $applied_sched_days      = $dd_group_snapshot['scheduled_days'];
+    $applied_sched_dir       = $dd_group_snapshot['scheduled_direction'];
+    $applied_delay_days      = $dd_group_snapshot['delay_days'];
+    $applied_trigger_status  = $dd_group_snapshot['trigger_status'];
+    $applied_conflict_info   = null;
+    $applied_policy          = isset( $dd_group_snapshot['policy'] ) ? $dd_group_snapshot['policy'] : 'priority_chain';
+    $applied_explain         = null;
+    // Keep $applied_config['source_label']/['source_id'] (read directly by
+    // the modal) in sync with the frozen snapshot too.
+    $applied_config['source_label'] = isset( $dd_group_snapshot['source_label'] ) ? $dd_group_snapshot['source_label'] : '';
+    $applied_config['source_id']    = isset( $dd_group_snapshot['source_id'] ) ? $dd_group_snapshot['source_id'] : 0;
+} else {
+    $applied_timing          = $applied_config['timing'];
+    $applied_source          = $applied_config['source'];
+    $applied_deposit_amount  = $applied_config['deposit_amount'];
+    $applied_date_field_key  = $applied_config['date_field_key'];
+    $applied_sched_days      = $applied_config['scheduled_days'];
+    $applied_sched_dir       = $applied_config['scheduled_direction'];
+    $applied_delay_days      = $applied_config['delay_days'];
+    $applied_trigger_status  = $applied_config['trigger_status'];
+    $applied_conflict_info   = isset( $applied_config['conflict_info'] ) ? $applied_config['conflict_info'] : null;
+    $applied_policy          = isset( $applied_config['policy'] ) ? $applied_config['policy'] : 'priority_chain';
+    $applied_explain         = isset( $applied_config['explain'] ) ? $applied_config['explain'] : null;
+}
 
 // Keep legacy variable for any other code that references it
 $capture_timing = $applied_timing;
@@ -173,6 +228,31 @@ if ( '' === $dd_stripe_mode || false === $dd_stripe_mode ) {
     } else {
         $dd_stripe_mode = '—';
     }
+}
+
+// ── Override with THIS hold's own frozen per-group snapshot, if it has one ──
+// Applied after every order-level/table fallback above so a group row
+// never displays another group's configuration (see $dd_group_snapshot
+// above). Auto-Release and Stripe Mode are genuinely order/site-wide
+// operational settings, not part of the Rule Engine resolution, so they
+// intentionally keep using the order-level values resolved above.
+if ( null !== $dd_group_snapshot ) {
+    $dd_aggregation_mode    = 'per_order'; // a Hold Group row is never 'per_item_aggregated' — that is a distinct, unrelated feature.
+    $dd_rule_policy         = isset( $dd_group_snapshot['policy'] ) ? $dd_group_snapshot['policy'] : $dd_rule_policy;
+    $dd_timing_strategy     = isset( $dd_group_snapshot['timing'] ) ? $dd_group_snapshot['timing'] : $dd_timing_strategy;
+    $dd_source              = isset( $dd_group_snapshot['source'] ) ? $dd_group_snapshot['source'] : $dd_source;
+    $dd_source_id           = isset( $dd_group_snapshot['source_id'] ) ? $dd_group_snapshot['source_id'] : $dd_source_id;
+    $dd_source_label        = isset( $dd_group_snapshot['source_label'] ) ? $dd_group_snapshot['source_label'] : $dd_source_label;
+    $dd_deposit_amount      = ( '' !== $dd_group_snapshot['deposit_amount'] ) ? $dd_group_snapshot['deposit_amount'] : $dd_deposit_amount;
+    $dd_delay_days          = ( '' !== $dd_group_snapshot['delay_days'] ) ? $dd_group_snapshot['delay_days'] : $dd_delay_days;
+    $dd_date_field_key      = ( '' !== $dd_group_snapshot['date_field_key'] ) ? $dd_group_snapshot['date_field_key'] : $dd_date_field_key;
+    $dd_scheduled_days      = ( '' !== $dd_group_snapshot['scheduled_days'] ) ? $dd_group_snapshot['scheduled_days'] : $dd_scheduled_days;
+    $dd_scheduled_direction = ( '' !== $dd_group_snapshot['scheduled_direction'] ) ? $dd_group_snapshot['scheduled_direction'] : $dd_scheduled_direction;
+    $dd_trigger_status      = ( '' !== $dd_group_snapshot['trigger_status'] ) ? $dd_group_snapshot['trigger_status'] : $dd_trigger_status;
+    // A Hold Group row is always its own single item — never the
+    // 'per_item_aggregated' breakdown/winner display.
+    $dd_item_breakdown      = '';
+    $dd_winner_item         = '';
 }
 
 // ── Debug log: snapshot-only loading ──
@@ -304,13 +384,25 @@ if ( $deposit->status === 'scheduled' ) {
 }
 
 // ── 2. Plugin logs — fetched once, used for Technical Logs block ──
+// Multi-Hold engine: prioritise rows tagged with THIS hold's id. A commande
+// with more than one hold would otherwise mix Hold A's timeline with Hold
+// B's — hold_id is only populated by securehold_log() going forward, so a
+// hold created before this change (or an order that never had a second
+// hold) falls back to the pre-existing order-wide behaviour below.
 $table_logs = $wpdb->prefix . 'securehold_logs';
 $logs       = array();
 if ( $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $wpdb->esc_like( $table_logs ) ) ) === $table_logs ) {
     $logs = $wpdb->get_results( $wpdb->prepare(
-        "SELECT message, severity, created_at, data FROM $table_logs WHERE order_id = %d ORDER BY created_at ASC LIMIT 50",
-        $deposit->order_id
+        "SELECT message, severity, created_at, data FROM $table_logs WHERE hold_id = %d ORDER BY created_at ASC LIMIT 50",
+        $deposit_id
     ) );
+    if ( empty( $logs ) ) {
+        $logs = $wpdb->get_results( $wpdb->prepare(
+            "SELECT message, severity, created_at, data FROM $table_logs WHERE order_id = %d AND (hold_id IS NULL OR hold_id = %d) ORDER BY created_at ASC LIMIT 50",
+            $deposit->order_id,
+            $deposit_id
+        ) );
+    }
     if ( empty( $logs ) ) {
         $search_id = $wpdb->esc_like( strval( $deposit->order_id ) );
         $logs = $wpdb->get_results( $wpdb->prepare(
@@ -458,6 +550,22 @@ if ( $order_exists ) {
         if ( stripos( $content, 'SecureHold' ) !== false || stripos( $content, 'securehold' ) !== false
             || stripos( $content, 'deposit' ) !== false || stripos( $content, 'hold' ) !== false ) {
 
+            // WooCommerce order notes are not structurally scoped to a Hold
+            // Group — a Multi-Hold order's notes are all attached to the one
+            // $order and would otherwise appear identically on every group's
+            // timeline. When this hold's own order_item_id is known (see
+            // $dd_this_order_item_id above) and the note text explicitly
+            // names a *different* order item (e.g. "order item #34" from
+            // schedule_group()'s note), it belongs to another group and is
+            // skipped here. A note naming no item at all (most of them) is
+            // kept — there is no false-positive risk, only under-filtering.
+            if ( null !== $dd_this_order_item_id
+                && preg_match( '/order item #(\d+)/i', $content, $dd_note_item_match )
+                && (int) $dd_note_item_match[1] !== $dd_this_order_item_id
+            ) {
+                continue;
+            }
+
             $n_type = 'info';
             if ( stripos( $content, 'error' ) !== false || stripos( $content, 'failed' ) !== false ) {
                 $n_type = 'danger';
@@ -507,7 +615,9 @@ if ($order_exists) {
     foreach ($meta_keys_to_show as $mk) {
         $val = $order->get_meta($mk, true);
         if (!empty($val)) {
-            $relevant_meta[$mk] = $val;
+            // '_securehold_attempt_made' is a per-group_key map since the
+            // Multi-Hold dedup fix — never a bare esc_html() over an array.
+            $relevant_meta[$mk] = is_array($val) ? wp_json_encode($val) : $val;
         }
     }
 }
@@ -827,12 +937,16 @@ $_sh_rule_engine_pro = securehold_feature_enabled( 'rule_engine' );
                 $sh_logs_rows  = array();
                 if ( $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $wpdb->esc_like( $sh_logs_table ) ) ) === $sh_logs_table ) {
                     // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is plugin-controlled.
+                    // Multi-Hold engine: a bare "order_id = %d OR hold_id = %d" would
+                    // still pull in Hold B's own rows on a commande with more than one
+                    // hold. Scoped instead to rows tagged with THIS hold, plus rows with
+                    // no hold_id at all (legacy entries, or events not tied to one hold).
                     $sh_logs_rows = (array) $wpdb->get_results( $wpdb->prepare(
                         "SELECT id, created_at, severity, event_type, message FROM {$sh_logs_table}
-                         WHERE order_id = %d OR hold_id = %d
+                         WHERE hold_id = %d OR (order_id = %d AND hold_id IS NULL)
                          ORDER BY created_at DESC, id DESC LIMIT 50",
-                        absint( $deposit->order_id ),
-                        absint( $deposit_id )
+                        absint( $deposit_id ),
+                        absint( $deposit->order_id )
                     ) );
                 }
             }

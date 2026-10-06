@@ -21,6 +21,7 @@ class Securehold_Admin {
         add_action('wp_ajax_securehold_deactivation_feedback', array($this, 'handle_deactivation_feedback'));
         add_action('wp_ajax_securehold_capture_hold', array($this, 'handle_capture_hold'));
         add_action('wp_ajax_securehold_release_hold', array($this, 'handle_release_hold'));
+        add_action('wp_ajax_securehold_cancel_schedule', array($this, 'handle_cancel_scheduled_hold'));
         add_action('wp_ajax_securehold_diagnose_deposit', array($this, 'handle_diagnose_deposit'));
         add_action('wp_ajax_securehold_diagnose_order_stripe', array($this, 'ajax_diagnose_order_stripe'));
 
@@ -65,6 +66,7 @@ class Securehold_Admin {
             'pending_manual' => 'sh-badge-pending',      // Action required - Orange
             'pending'        => 'sh-badge-secondary',    // Inactive - Gray
             'scheduled'      => 'sh-badge-scheduled',    // Awaiting cron execution - Purple
+            'cancelled'      => 'sh-badge-secondary',    // Cancelled by admin before Stripe - Gray
         );
 
         return isset($status_map[$status]) ? $status_map[$status] : 'sh-badge-secondary';
@@ -772,13 +774,28 @@ class Securehold_Admin {
 
         // DO NOT delete the pending_manual entry yet — wait for Stripe result first
 
+        // Multi-Hold: this button is per hold-card (deposit_id identifies
+        // exactly which one), so the group it belongs to must be threaded
+        // through to create_hold_for_order() — otherwise every click would
+        // target the default group_key=null regardless of which card was
+        // clicked, and clicking group A's card could authorize group B's
+        // placeholder instead. group_key stays null for a legacy single-hold
+        // order exactly like before.
+        $group_key = null;
+        if ($deposit_id && class_exists('SecureHold_DB')) {
+            $target_row = SecureHold_DB::get_hold($deposit_id);
+            if ($target_row && !empty($target_row->group_key)) {
+                $group_key = $target_row->group_key;
+            }
+        }
+
         // Force create the hold
         if (!class_exists('Securehold_Scheduler')) {
             wp_send_json_error(['message' => __('Scheduler class not found', 'securehold-security-deposit-holds')]);
         }
 
         $scheduler = new Securehold_Scheduler();
-        $result = $scheduler->create_hold_for_order($order_id, true); // Force execution
+        $result = $scheduler->create_hold_for_order($order_id, true, $group_key); // Force execution, this hold's own group
 
         // ── Handle result ──
         // WP_Error is truthy in PHP, so we must check is_wp_error() explicitly
@@ -857,24 +874,22 @@ class Securehold_Admin {
 
         // ── Success: Stripe hold was created ──
         // Now safe to delete the old pending_manual entry (the scheduler already inserted a new 'authorized' row)
-        if ($deposit_id) {
-            // Check if a new authorized row exists for this order (created by scheduler)
-            $new_deposit = $wpdb->get_row($wpdb->prepare(
-                "SELECT id FROM {$table_name} WHERE order_id = %d AND status = 'authorized' ORDER BY id DESC LIMIT 1",
-                $order_id
-            ));
+        // Scoped to THIS hold's own group: on a Multi-Hold order, a bare
+        // "newest authorized row of the order" could belong to a sibling
+        // group that authorized around the same time.
+        if ($deposit_id && class_exists('SecureHold_DB')) {
+            $new_deposit = SecureHold_DB::get_hold_for_group($order_id, $group_key);
 
-            if ($new_deposit && (int) $new_deposit->id !== $deposit_id) {
+            if ($new_deposit && $new_deposit->status === 'authorized' && (int) $new_deposit->id !== $deposit_id) {
                 // New authorized row exists and is different from the old pending row — safe to delete old one
                 $wpdb->delete($table_name, ['id' => $deposit_id], ['%d']);
             }
         }
 
-        // Look up the final deposit for the response
-        $final_deposit = $wpdb->get_row($wpdb->prepare(
-            "SELECT id FROM {$table_name} WHERE order_id = %d ORDER BY id DESC LIMIT 1",
-            $order_id
-        ));
+        // Look up the final deposit for the response — this group's row only.
+        $final_deposit = class_exists('SecureHold_DB')
+            ? SecureHold_DB::get_hold_for_group($order_id, $group_key)
+            : null;
 
         wp_send_json_success(array(
             'message'    => __('Hold created successfully', 'securehold-security-deposit-holds'),
@@ -913,7 +928,17 @@ class Securehold_Admin {
             return;
         }
 
-        $deposit = SecureHold_DB::get_deposit($order_id);
+        // Multi-Hold engine: every hold of this order, oldest first. A
+        // Single-Hold-per-Order commande — today, every commande, since
+        // nothing in production yet supplies a second group_key — gets back
+        // a one-element array, so $deposit below is exactly what
+        // get_deposit($order_id) used to return. The manual-mode branch just
+        // below still reasons about that one "primary" deposit; a future
+        // grouping policy giving one order several holds with different
+        // manual-mode states is not handled here yet — out of scope for this
+        // increment.
+        $holds   = SecureHold_DB::get_holds_for_order($order_id);
+        $deposit = !empty($holds) ? $holds[0] : null;
 
         // Show "Create Hold Now" button if: no deposit, pending_manual, or failed (retry)
         $should_show_create_button = (!$deposit) || ($deposit && in_array($deposit->status, array('pending_manual', 'failed'), true));
@@ -979,12 +1004,93 @@ class Securehold_Admin {
             return;
         }
 
-        $currency_symbol = get_woocommerce_currency_symbol($deposit->currency);
-        $metabox_currency = ! empty( $deposit->currency ) ? strtoupper( $deposit->currency ) : 'USD';
-        $wc_price_args = array( 'currency' => $metabox_currency );
-
+        // Multiple Hold Groups: one card per hold. A Single-Hold-per-Order
+        // commande (today, always) renders exactly the one card it always
+        // did — same markup, just reached through a one-element loop instead
+        // of a single $deposit variable.
         ?>
         <div class="securehold-order-box">
+            <?php if ( count( $holds ) > 1 ) : ?>
+            <p style="margin:0 0 10px 0; font-size:12px; color:#6b7280;">
+                <?php
+                printf(
+                    /* translators: %d is the number of security deposits on this order */
+                    esc_html( _n( '%d security deposit on this order.', '%d independent security deposits on this order.', count( $holds ), 'securehold-security-deposit-holds' ) ),
+                    count( $holds )
+                );
+                ?>
+            </p>
+            <?php endif; ?>
+            <?php foreach ( $holds as $hold_row ) : ?>
+                <?php self::render_single_hold_card( $hold_row, count( $holds ) > 1 ); ?>
+            <?php endforeach; ?>
+
+            <div style="text-align: center; border-top: 1px solid #eee; padding-top: 10px;">
+                <a href="<?php echo esc_url( admin_url('admin.php?page=securehold-deposits') ); ?>" class="button" style="width:100%; text-align:center;">
+                    <?php esc_html_e('View All Deposits', 'securehold-security-deposit-holds'); ?>
+                </a>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Render one hold's card inside the order metabox.
+     *
+     * Extracted so a commande with more than one Hold Group renders one of
+     * these per hold instead of the single card the metabox used to show
+     * unconditionally. Every action button already carried its own hold's
+     * id explicitly (data-id) before this Multi-Hold engine existed — that
+     * did not need to change, only the fact that more than one such card can
+     * now be on screen at once.
+     *
+     * @since 1.4.0 (Multi-Hold engine, admin UI increment)
+     *
+     * @param object $deposit   Row from securehold_holds.
+     * @param bool   $show_group_key Whether to surface group_key for diagnosis
+     *                                (only meaningful once more than one hold exists).
+     * @return void
+     */
+    private static function render_single_hold_card( $deposit, $show_group_key = false ) {
+        $metabox_currency = ! empty( $deposit->currency ) ? strtoupper( $deposit->currency ) : 'USD';
+        $wc_price_args = array( 'currency' => $metabox_currency );
+        ?>
+        <div class="securehold-hold-card" style="border:1px solid #eee; border-radius:4px; padding:10px; margin-bottom:10px;">
+            <?php
+            // Booking Integrations (diagnostic only — metadata is never read
+            // by any grouping/amount/timing/capture logic, admin display
+            // only). Decoded defensively: a malformed or absent value simply
+            // renders nothing here, never an error.
+            $sh_booking_meta = array();
+            if ( ! empty( $deposit->metadata ) ) {
+                $sh_decoded = json_decode( $deposit->metadata, true );
+                if ( is_array( $sh_decoded ) && ! empty( $sh_decoded['provider'] ) && ! empty( $sh_decoded['booking_id'] ) ) {
+                    $sh_booking_meta = $sh_decoded;
+                }
+            }
+            ?>
+            <?php if ( $sh_booking_meta ) : ?>
+            <div style="margin-bottom: 10px; font-size: 12px; color: #4b5563;">
+                <strong><?php echo esc_html( ucwords( str_replace( '-', ' ', $sh_booking_meta['provider'] ) ) ); ?></strong>
+                — <?php
+                    printf(
+                        /* translators: %s is the booking ID */
+                        esc_html__( 'Booking #%s', 'securehold-security-deposit-holds' ),
+                        esc_html( $sh_booking_meta['booking_id'] )
+                    );
+                ?>
+                <?php if ( ! empty( $sh_booking_meta['booking_start'] ) ) : ?>
+                    <br><?php esc_html_e( 'Booking start:', 'securehold-security-deposit-holds' ); ?>
+                    <?php
+                    $sh_booking_ts = strtotime( $sh_booking_meta['booking_start'] );
+                    echo $sh_booking_ts
+                        ? esc_html( date_i18n( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $sh_booking_ts ) )
+                        : esc_html( $sh_booking_meta['booking_start'] );
+                    ?>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+
             <div style="margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center;">
                 <strong><?php esc_html_e('Status:', 'securehold-security-deposit-holds'); ?></strong>
                 <?php self::render_status_badge($deposit->status, true, $deposit->order_id, isset($deposit->notes) ? $deposit->notes : ''); ?>
@@ -1006,10 +1112,33 @@ class Securehold_Admin {
                 <strong><?php esc_html_e('ID:', 'securehold-security-deposit-holds'); ?></strong> <?php echo esc_html($deposit->intent_id); ?>
             </div>
 
+            <?php if ($show_group_key && ! empty( $deposit->group_key )) : ?>
+            <div style="margin-bottom: 12px; font-size: 11px; color: #999;">
+                <strong><?php esc_html_e('Group:', 'securehold-security-deposit-holds'); ?></strong> <?php echo esc_html($deposit->group_key); ?>
+            </div>
+            <?php endif; ?>
+
             <?php if (!empty($deposit->expires_at)) : ?>
             <div style="margin-bottom: 12px; font-size: 12px; color: #6b7280;">
                 <strong><?php esc_html_e('Expires:', 'securehold-security-deposit-holds'); ?></strong>
                 <?php echo esc_html(date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($deposit->expires_at))); ?>
+            </div>
+            <?php endif; ?>
+
+            <?php if (!empty($deposit->scheduled_for) && $deposit->status === 'scheduled') : ?>
+            <div style="margin-bottom: 12px; font-size: 12px; color: #6b7280;">
+                <strong><?php esc_html_e('Scheduled for:', 'securehold-security-deposit-holds'); ?></strong>
+                <?php echo esc_html(date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($deposit->scheduled_for))); ?>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($deposit->status === 'scheduled') : ?>
+            <div style="border-top: 1px solid #eee; padding-top: 10px; margin-bottom: 10px;">
+                <button type="button" class="button button-small sh-btn-cancel-schedule"
+                        data-id="<?php echo esc_attr($deposit->id); ?>"
+                        style="width:100%; text-align:center;">
+                    <?php esc_html_e('Cancel Schedule', 'securehold-security-deposit-holds'); ?>
+                </button>
             </div>
             <?php endif; ?>
 
@@ -1032,12 +1161,6 @@ class Securehold_Admin {
                 </button>
             </div>
             <?php endif; ?>
-
-            <div style="text-align: center; border-top: 1px solid #eee; padding-top: 10px;">
-                <a href="<?php echo esc_url( admin_url('admin.php?page=securehold-deposits') ); ?>" class="button" style="width:100%; text-align:center;">
-                    <?php esc_html_e('View All Deposits', 'securehold-security-deposit-holds'); ?>
-                </a>
-            </div>
         </div>
         <?php
     }
@@ -1326,7 +1449,9 @@ class Securehold_Admin {
         }
 
         if ( class_exists( 'Securehold_Scheduler' ) ) {
-            $terminal_token = Securehold_Scheduler::acquire_terminal_lock( $deposit->order_id );
+            // Scoped to this hold's own id, not the order: capturing Hold A
+            // must never contend with releasing Hold B on the same commande.
+            $terminal_token = Securehold_Scheduler::acquire_terminal_lock( $deposit->order_id, $deposit_id );
 
             if ( $terminal_token === false ) {
                 // A collision, not a failure: another request is mid-flight on
@@ -1343,13 +1468,17 @@ class Securehold_Admin {
             // every exit path, and without it a refused capture would hold the
             // lock for its full TTL and block the merchant's next attempt.
             $sh_order_id = $deposit->order_id;
-            register_shutdown_function( function () use ( $sh_order_id, $terminal_token ) {
-                Securehold_Scheduler::release_terminal_lock( $sh_order_id, $terminal_token );
+            $sh_hold_id  = $deposit_id;
+            register_shutdown_function( function () use ( $sh_order_id, $terminal_token, $sh_hold_id ) {
+                Securehold_Scheduler::release_terminal_lock( $sh_order_id, $terminal_token, $sh_hold_id );
             } );
 
             // Re-read now that we hold the lock: the request that just finished
-            // may have captured this deposit a moment ago.
-            $deposit = SecureHold_DB::get_deposit( $deposit->order_id ) ?: $deposit;
+            // may have captured this deposit a moment ago. Re-read by this same
+            // hold's own id — never by order_id, which on a commande with more
+            // than one Hold Group could silently hand back a different hold
+            // than the one this request was asked to capture.
+            $deposit = SecureHold_DB::get_hold( $deposit_id ) ?: $deposit;
         }
 
         // ── Server-side guard: block any second capture ──
@@ -1426,9 +1555,11 @@ class Securehold_Admin {
         $this->ensure_email_manager_loaded();
         if ( $sh_state['applied'] && class_exists( 'Securehold_Email_Manager' ) ) {
             $capture_payload = (object) array(
+                'id'              => $deposit->id,
                 'amount'          => floatval( $deposit->amount ),
                 'captured_amount' => $final_captured_float,
                 'currency'        => $deposit->currency,
+                'intent_id'       => $deposit->intent_id,
             );
             Securehold_Email_Manager::fire_email( 'securehold_deposit_captured', $deposit->order_id, $capture_payload );
             Securehold_Email_Manager::fire_email( 'securehold_admin_hold_captured', $deposit->order_id, $capture_payload );
@@ -1477,10 +1608,12 @@ class Securehold_Admin {
         }
 
         // Same lock as capture, deliberately: a capture and a release fired at
-        // the same moment on one deposit must contend, not both reach Stripe.
+        // the same moment on the SAME hold must contend, not both reach Stripe.
+        // Scoped to this hold's own id, not the order: releasing Hold B must
+        // never contend with capturing Hold A on the same commande.
         $terminal_token = null;
         if ( class_exists( 'Securehold_Scheduler' ) ) {
-            $terminal_token = Securehold_Scheduler::acquire_terminal_lock( $deposit->order_id );
+            $terminal_token = Securehold_Scheduler::acquire_terminal_lock( $deposit->order_id, $deposit_id );
 
             if ( $terminal_token === false ) {
                 securehold_log( 'Terminal operation already in progress', array(
@@ -1491,11 +1624,16 @@ class Securehold_Admin {
             }
 
             $sh_order_id = $deposit->order_id;
-            register_shutdown_function( function () use ( $sh_order_id, $terminal_token ) {
-                Securehold_Scheduler::release_terminal_lock( $sh_order_id, $terminal_token );
+            $sh_hold_id  = $deposit_id;
+            register_shutdown_function( function () use ( $sh_order_id, $terminal_token, $sh_hold_id ) {
+                Securehold_Scheduler::release_terminal_lock( $sh_order_id, $terminal_token, $sh_hold_id );
             } );
 
-            $deposit = SecureHold_DB::get_deposit( $deposit->order_id ) ?: $deposit;
+            // Re-read by this same hold's own id — never by order_id, which on
+            // a commande with more than one Hold Group could silently hand
+            // back a different hold than the one this request was asked to
+            // release.
+            $deposit = SecureHold_DB::get_hold( $deposit_id ) ?: $deposit;
 
             if ( in_array( $deposit->status, array( 'captured', 'released' ), true ) ) {
                 securehold_log( 'Skipped (already ' . $deposit->status . ')', array(
@@ -1553,8 +1691,10 @@ class Securehold_Admin {
         // ── Email notifications (via centralized manager) ────────────
         $this->ensure_email_manager_loaded();
         $release_payload = (object) array(
-            'amount'   => floatval( $deposit->amount ),
-            'currency' => $deposit->currency,
+            'id'        => $deposit->id,
+            'amount'    => floatval( $deposit->amount ),
+            'currency'  => $deposit->currency,
+            'intent_id' => $deposit->intent_id,
         );
 
         if ( $sh_state['applied'] && class_exists( 'Securehold_Email_Manager' ) ) {
@@ -1564,6 +1704,111 @@ class Securehold_Admin {
 
         securehold_log('Manual Release Success', ['order_id' => $deposit->order_id, 'intent' => $deposit->intent_id]);
         wp_send_json_success(['message' => __('Hold released successfully!', 'securehold-security-deposit-holds')]);
+    }
+
+    /**
+     * AJAX: cancel the WP-Cron schedule of one Hold Group that has not yet
+     * created its PaymentIntent.
+     *
+     * Status decision (Multi-Hold engine, stabilization increment): none of
+     * the existing statuses fit "an admin cancelled this before Stripe was
+     * ever called". 'failed' is reserved for a real Stripe refusal and
+     * carries wording ("Hold creation failed: ...") that would misrepresent
+     * a deliberate admin action as an error. 'released' means
+     * cancel_payment_intent() was called on a REAL authorized PaymentIntent;
+     * a scheduled placeholder's intent_id is a synthetic
+     * 'scheduled_{order_id}_{time}' string, never a real pi_ — there is
+     * nothing on Stripe to release. Reusing either would corrupt the
+     * support/audit trail rather than describe what happened, so this
+     * introduces exactly one new status: 'cancelled'. It is written the
+     * same way 'failed' already is — directly via SecureHold_DB::update_hold(),
+     * not through Securehold_Hold_State — because, like 'failed', it belongs
+     * to the pre-authorization phase the scheduler itself owns, not to the
+     * captured/released terminal pair that state machine governs.
+     *
+     * @since 1.4.0 (Multi-Hold engine, stabilization increment)
+     */
+    public function handle_cancel_scheduled_hold() {
+        check_ajax_referer('securehold_cancel_schedule_nonce', 'nonce');
+
+        if (!current_user_can('manage_woocommerce') && !current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'securehold-security-deposit-holds')]);
+        }
+
+        $deposit_id = isset($_POST['deposit_id']) ? intval($_POST['deposit_id']) : 0;
+        if ($deposit_id <= 0) {
+            wp_send_json_error(['message' => __('Invalid deposit ID.', 'securehold-security-deposit-holds')]);
+        }
+
+        if (!class_exists('SecureHold_DB')) {
+            if (defined('SECUREHOLD_PLUGIN_DIR')) require_once SECUREHOLD_PLUGIN_DIR . 'includes/database/class-securehold-wp-db.php';
+        }
+        if (!class_exists('Securehold_Scheduler')) {
+            if (defined('SECUREHOLD_PLUGIN_DIR')) require_once SECUREHOLD_PLUGIN_DIR . 'includes/cron/class-securehold-wp-scheduler.php';
+        }
+
+        $deposit = SecureHold_DB::get_hold( $deposit_id );
+
+        if (!$deposit) {
+            wp_send_json_error(['message' => __('Deposit not found.', 'securehold-security-deposit-holds')]);
+        }
+
+        // Cancelling races a concurrent creation attempt (the cron firing at
+        // the scheduled moment), not a capture/release — so this contends on
+        // the CREATION lock for this order+group, not the terminal lock.
+        $creation_token = null;
+        if ( class_exists( 'Securehold_Scheduler' ) ) {
+            $creation_token = Securehold_Scheduler::acquire_hold_lock( $deposit->order_id, $deposit->group_key );
+
+            if ( $creation_token === false ) {
+                securehold_log( 'Cancel-schedule blocked: creation already in progress', array(
+                    'deposit_id' => $deposit_id,
+                    'order_id'   => $deposit->order_id,
+                    'group_key'  => $deposit->group_key,
+                ), 'debug' );
+                wp_send_json_error( array( 'message' => __( 'A creation attempt for this hold is already in progress. Try again in a moment.', 'securehold-security-deposit-holds' ) ) );
+            }
+
+            $sh_order_id  = $deposit->order_id;
+            $sh_group_key = $deposit->group_key;
+            register_shutdown_function( function () use ( $sh_order_id, $creation_token, $sh_group_key ) {
+                Securehold_Scheduler::release_hold_lock( $sh_order_id, $creation_token, $sh_group_key );
+            } );
+
+            // Re-read THIS same hold by id after acquiring the lock — the
+            // cron may have started (or finished) creating it a moment ago.
+            $deposit = SecureHold_DB::get_hold( $deposit_id ) ?: $deposit;
+        }
+
+        if ($deposit->status !== 'scheduled') {
+            /* translators: %s is the deposit status */
+            wp_send_json_error(['message' => sprintf(__('Cannot cancel a deposit with status "%s". Only scheduled deposits can be cancelled.', 'securehold-security-deposit-holds'), $deposit->status)]);
+        }
+
+        // Removes only the ONE WP-Cron event matching (order_id, group_key) —
+        // every other group's own event on the same order is untouched.
+        Securehold_Scheduler::cancel_scheduled_hold( $deposit->order_id, $deposit->group_key );
+
+        SecureHold_DB::update_hold( $deposit->id, array(
+            'status' => 'cancelled',
+            'notes'  => __('Schedule cancelled by admin before the hold was created.', 'securehold-security-deposit-holds'),
+        ));
+
+        $order = wc_get_order( $deposit->order_id );
+        if ($order) {
+            $order->add_order_note( __('SecureHold WP: Scheduled security deposit cancelled by admin before creation.', 'securehold-security-deposit-holds') );
+            $order->update_meta_data('_securehold_deposit_status', 'cancelled');
+            $order->delete_meta_data('_securehold_deposit_next_run');
+            $order->save();
+        }
+
+        securehold_log('Scheduled hold cancelled by admin', [
+            'order_id'  => $deposit->order_id,
+            'hold_id'   => $deposit->id,
+            'group_key' => $deposit->group_key,
+        ], 'info');
+
+        wp_send_json_success(['message' => __('Schedule cancelled.', 'securehold-security-deposit-holds')]);
     }
 
     /**
@@ -2317,6 +2562,7 @@ class Securehold_Admin {
                 'emails' => wp_create_nonce('securehold_emails_nonce'),
                 'capture' => wp_create_nonce('securehold_capture_nonce'),
                 'release' => wp_create_nonce('securehold_release_nonce'),
+                'cancelSchedule' => wp_create_nonce('securehold_cancel_schedule_nonce'),
                 'diagnose' => wp_create_nonce('securehold_diagnose_nonce'),
                 'productSearch' => wp_create_nonce('securehold_search_products'),
                 'productConfig' => wp_create_nonce('securehold_product_settings'),

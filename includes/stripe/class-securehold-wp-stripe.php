@@ -305,7 +305,67 @@ class SecureHold_Stripe {
      *
      * @since 4.1.0 Added PI pre-diagnosis check, developer filter, actionable error messages
      */
-    public static function create_payment_intent($amount, $currency, $customer_id, $payment_method_id, $order_id) {
+    /**
+     * Idempotency key for one logical hold-creation attempt.
+     *
+     * Stripe retains the first response for a given key for at least 24
+     * hours and errors if a retry within that window carries different
+     * parameters (docs.stripe.com/api/idempotent_requests, verified
+     * 2026-09-18) — exactly the guard a lost-response retry needs: create
+     * Group A's PaymentIntent, the connection drops before the reply
+     * arrives, the caller retries — the second attempt must resolve to the
+     * SAME PaymentIntent, never a second one.
+     *
+     * Preferring $hold_id when it is known follows the mission's own
+     * preference for a stable row identity over free text. It is not
+     * always available before the Stripe call, though: the Immediate
+     * strategy's very first attempt for a given group has not inserted a
+     * row yet (that only happens after Stripe answers). (order_id,
+     * group_key) is the one identity that is always available and that
+     * uniquely names the same logical hold across every retry of the same
+     * attempt, so it is the fallback rather than a second, weaker key.
+     * group_key is opaque and of unbounded length, so it is hashed to a
+     * fixed-width suffix — the same reasoning already applied to the
+     * locking keys in Securehold_Scheduler::hold_lock_key().
+     *
+     * Well within Stripe's 255-character limit either way.
+     *
+     * @since 1.4.0 (Multi-Hold engine, Stripe increment)
+     *
+     * @param int         $order_id
+     * @param int|null    $hold_id
+     * @param string|null $group_key
+     * @return string
+     */
+    public static function build_idempotency_key( $order_id, $hold_id = null, $group_key = null ) {
+        if ( ! empty( $hold_id ) ) {
+            return 'securehold:create_hold:' . (int) $hold_id;
+        }
+
+        $suffix = ( $group_key !== null && $group_key !== '' )
+            ? substr( md5( (string) $group_key ), 0, 16 )
+            : 'default';
+
+        return 'securehold:create_hold:' . (int) $order_id . ':' . $suffix;
+    }
+
+    /**
+     * @param float       $amount
+     * @param string      $currency
+     * @param string      $customer_id
+     * @param string      $payment_method_id
+     * @param int         $order_id
+     * @param int|null    $hold_id   Row id of an already-existing placeholder for this
+     *                                hold (Delayed/Scheduled/Manual strategies), or null
+     *                                when this attempt has not inserted a row yet
+     *                                (Immediate strategy's first try). Used for the
+     *                                idempotency key and for Stripe metadata.
+     * @param string|null $group_key Opaque Hold Group identifier, or null for the
+     *                                default group. Used for the idempotency key
+     *                                fallback and for Stripe metadata.
+     * @return \Stripe\PaymentIntent|WP_Error
+     */
+    public static function create_payment_intent($amount, $currency, $customer_id, $payment_method_id, $order_id, $hold_id = null, $group_key = null) {
         if (!self::init_stripe()) {
             return new WP_Error('stripe_config_error', __('Stripe API keys are missing.', 'securehold-security-deposit-holds'));
         }
@@ -432,10 +492,27 @@ class SecureHold_Stripe {
                 'off_session' => true, // Required: hold is created after customer left checkout
                 /* translators: %s is the WooCommerce order ID */
                 'description' => sprintf(__('Security Deposit for Order #%s', 'securehold-security-deposit-holds'), $order_id),
-                'metadata' => array(
-                    'order_id' => $order_id,
-                    'plugin' => 'securehold'
-                )
+                'metadata' => array_filter( array(
+                    'order_id'              => $order_id,
+                    'plugin'                => 'securehold',
+                    // The webhook still identifies a hold by intent_id, never by this
+                    // metadata (Securehold_Webhook::find_securehold_hold(), unchanged).
+                    // These two exist so a PaymentIntent is self-explanatory in the
+                    // Stripe Dashboard on a commande with more than one hold — support
+                    // should never have to cross-reference the DB to know which Hold
+                    // Group a given PaymentIntent belongs to.
+                    'securehold_hold_id'    => $hold_id,
+                    'securehold_group_key'  => $group_key,
+                    // Site identity only — base URL, no path, no PII, no
+                    // credentials. Lets a Stripe-side integration (e.g. the
+                    // SecureHold Stripe App) resolve which WooCommerce
+                    // install a hold belongs to and link back to the order,
+                    // without SecureHold operating a lookup service of its
+                    // own. home_url() (not site_url()) matches what a human
+                    // recognizes as "the site" and is already used this way
+                    // as the return_url fallback a few lines below.
+                    'securehold_site_url'   => home_url(),
+                ), function ( $v ) { return $v !== null && $v !== ''; } )
             );
 
             // Add return_url for 3DS fallback
@@ -468,18 +545,26 @@ class SecureHold_Stripe {
                 ));
             }
 
+            $idempotency_key = self::build_idempotency_key( $order_id, $hold_id, $group_key );
+
             if (function_exists('securehold_log')) {
                 securehold_log('Creating hold PaymentIntent', array(
                     'order_id' => $order_id,
+                    'hold_id' => $hold_id,
+                    'group_key' => $group_key,
                     'customer' => $customer_id,
                     'pm' => $payment_method_id,
                     'amount_cents' => $amount_cents,
                     'currency' => $currency,
                     'filtered' => ($intent_args !== $intent_args_before),
+                    'idempotency_key' => $idempotency_key,
                 ));
             }
 
-            $intent = \Stripe\PaymentIntent::create($intent_args);
+            // Stable per-hold key: see build_idempotency_key() above for why a
+            // connection-drop retry of this same call resolves to the same
+            // PaymentIntent instead of creating a second one.
+            $intent = \Stripe\PaymentIntent::create($intent_args, array( 'idempotency_key' => $idempotency_key ));
 
             if (function_exists('securehold_log')) {
                 securehold_log('Hold PaymentIntent created', array(

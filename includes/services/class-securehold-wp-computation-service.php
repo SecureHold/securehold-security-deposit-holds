@@ -190,7 +190,17 @@ class Securehold_Deposit_Computation_Service {
 
         $mode = get_option( 'securehold_aggregation_mode', 'per_order' );
 
-        if ( 'per_item_aggregated' === $mode ) {
+        // Booking Multi-Hold ("one booking = one security deposit") creates
+        // one hold per line item at order time — each resolving its own
+        // Product/Category/Global config via resolve_item_config(), the same
+        // per-item resolution compute_for_cart_per_item() already performs
+        // for the unrelated per_item_aggregated setting below. The checkout
+        // preview must sum the same way here too, or it silently shows only
+        // one winning item's amount instead of the order's real total
+        // exposure. This is a preview only — no Hold Group row is created.
+        $booking_multi_hold_active = class_exists( 'Securehold_Multi_Hold' ) && Securehold_Multi_Hold::may_create_multiple_groups();
+
+        if ( 'per_item_aggregated' === $mode || $booking_multi_hold_active ) {
             return self::compute_for_cart_per_item( $cart_items );
         }
 
@@ -832,13 +842,20 @@ class Securehold_Deposit_Computation_Service {
      *   - highest_deposit_wins: all candidates compete on amount.
      *
      * @since 5.2.0 Added $policy and $engine parameters for V2 support.
+     * @since 1.4.0 (Multi-Hold engine, Booking Integrations increment) Made
+     *              public. Visibility only — no behaviour change. This is
+     *              the one correct reuse point for resolving Product/
+     *              Category/Global for a SINGLE order item independent of
+     *              the order's own aggregation mode, which a Booking
+     *              Grouping Policy needs (one booking = one order item = its
+     *              own Hold Group) without duplicating the Rule Engine.
      * @param int      $product_id
      * @param WC_Order $order
      * @param string   $policy 'priority_chain' | 'highest_deposit_wins'
      * @param string   $engine 'legacy' | 'v2'
      * @return array Config Resolver result structure.
      */
-    private static function resolve_item_config( $product_id, $order, $policy = 'priority_chain', $engine = 'legacy' ) {
+    public static function resolve_item_config( $product_id, $order, $policy = 'priority_chain', $engine = 'legacy' ) {
         $strategy_table = self::get_strategy_priority();
         $type_priority  = Securehold_Config_Resolver::get_type_priority();
 
@@ -846,12 +863,11 @@ class Securehold_Deposit_Computation_Service {
             require_once SECUREHOLD_PLUGIN_DIR . 'admin/class-securehold-wp-product-settings.php';
         }
 
-        // Product Rule and Category Rule are premium (PRO Rule Engine) candidates.
-        // When the Rule Engine is not active, skip straight to Global — even if
-        // legacy rule data still exists in the database (e.g. PRO deactivated).
-        if ( ! securehold_rule_engine_enabled() ) {
-            return self::build_item_result_global( $order );
-        }
+        // Product Rule and Category Rule are premium (PRO Rule Engine) candidates,
+        // gated below. MagePeople is FREE — gated only by its own
+        // securehold_magepeople_deposit_enabled option, never by the Rule
+        // Engine — mirroring Securehold_Config_Resolver::resolve_for_product().
+        $rule_engine_on = securehold_rule_engine_enabled();
 
         // ── V2 + Highest Deposit Wins: collect ALL candidates for this item ──
         if ( 'v2' === $engine && 'highest_deposit_wins' === $policy ) {
@@ -859,7 +875,7 @@ class Securehold_Deposit_Computation_Service {
 
             // Product rule candidate.
             $product_enabled = get_post_meta( $product_id, '_securehold_enabled', true );
-            if ( $product_enabled === 'yes' ) {
+            if ( $rule_engine_on && $product_enabled === 'yes' ) {
                 $product_timing = get_post_meta( $product_id, '_securehold_capture_timing', true );
                 if ( ! empty( $product_timing ) ) {
                     $settings = Securehold_Product_Settings::get_settings( $product_id );
@@ -876,8 +892,29 @@ class Securehold_Deposit_Computation_Service {
                 }
             }
 
-            // Category rule candidates.
-            $all_rules = get_option( 'securehold_category_rules', array() );
+            // MagePeople "Booking and Rental Manager" candidate (opt-in bridge,
+            // FREE — independent of the Rule Engine). Skipped when this item
+            // already has a product_rule candidate above — mirrors
+            // Securehold_Config_Resolver::collect_all_candidates().
+            if ( ! $rule_engine_on || $product_enabled !== 'yes' ) {
+                $mp_settings = Securehold_Config_Resolver::get_magepeople_settings( $product_id );
+                if ( null !== $mp_settings ) {
+                    $raw    = $mp_settings['deposit_amount'];
+                    $timing = 'immediate'; // No MagePeople timing signal; used for strategy_prio sort only.
+                    $candidates[] = array(
+                        'type'            => 'magepeople_deposit',
+                        'id'              => $product_id,
+                        'label'           => wc_get_product( $product_id ) ? wc_get_product( $product_id )->get_name() : '#' . $product_id,
+                        'settings'        => $mp_settings,
+                        'amount_resolved' => self::resolve_amount( $raw, $order ),
+                        'strategy_prio'   => isset( $strategy_table[ $timing ] ) ? $strategy_table[ $timing ] : 99,
+                        'type_prio'       => $type_priority['magepeople_deposit'],
+                    );
+                }
+            }
+
+            // Category rule candidates — premium (PRO Rule Engine).
+            $all_rules = $rule_engine_on ? get_option( 'securehold_category_rules', array() ) : array();
             if ( is_array( $all_rules ) && ! empty( $all_rules ) ) {
                 $terms = wp_get_object_terms( $product_id, 'product_cat', array(
                     'fields'  => 'ids',
@@ -934,9 +971,9 @@ class Securehold_Deposit_Computation_Service {
             return self::build_item_result( $winner['type'], $winner['id'], $winner['label'], $winner['settings'], $order );
         }
 
-        // ── Priority Chain (legacy + V2): Product > Category > Global ──
+        // ── Priority Chain (legacy + V2): Product > MagePeople > Category > Global ──
         $product_enabled = get_post_meta( $product_id, '_securehold_enabled', true );
-        if ( $product_enabled === 'yes' ) {
+        if ( $rule_engine_on && $product_enabled === 'yes' ) {
             $product_timing = get_post_meta( $product_id, '_securehold_capture_timing', true );
             if ( ! empty( $product_timing ) ) {
                 $settings = Securehold_Product_Settings::get_settings( $product_id );
@@ -944,8 +981,16 @@ class Securehold_Deposit_Computation_Service {
             }
         }
 
-        // Check category rules.
-        $all_rules = get_option( 'securehold_category_rules', array() );
+        // MagePeople "Booking and Rental Manager" (opt-in bridge, FREE —
+        // independent of the Rule Engine). Only reached when no product rule
+        // matched above — mirrors Securehold_Config_Resolver::resolve_for_product().
+        $mp_settings = Securehold_Config_Resolver::get_magepeople_settings( $product_id );
+        if ( null !== $mp_settings ) {
+            return self::build_item_result( 'magepeople_deposit', $product_id, wc_get_product( $product_id ) ? wc_get_product( $product_id )->get_name() : '#' . $product_id, $mp_settings, $order );
+        }
+
+        // Check category rules — premium (PRO Rule Engine).
+        $all_rules = $rule_engine_on ? get_option( 'securehold_category_rules', array() ) : array();
         if ( is_array( $all_rules ) && ! empty( $all_rules ) ) {
             $terms = wp_get_object_terms( $product_id, 'product_cat', array(
                 'fields'  => 'ids',
